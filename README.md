@@ -12,6 +12,8 @@
 
 * [第一章：GitLab CI/CD](https://github.com/michaelchen1225/CICD/blob/main/GitLab%20CICD/Gitlab-cicd-note-github/01.md)
 
+* [第二章：語法整理](https://github.com/michaelchen1225/CICD/blob/main/GitLab%20CICD/Gitlab-cicd-note-github/02.md)
+
 ## 待處理
 
 * 甚麼是 webhook？

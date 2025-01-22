@@ -12,7 +12,9 @@
 
 * [第一章：GitLab CI/CD](https://github.com/michaelchen1225/CICD/blob/main/GitLab%20CICD/Gitlab-cicd-note-github/01.md)
 
-* [第二章：語法整理](https://github.com/michaelchen1225/CICD/blob/main/GitLab%20CICD/Gitlab-cicd-note-github/02.md)
+* [第二章：語法整理 (持續更新)](https://github.com/michaelchen1225/CICD/blob/main/GitLab%20CICD/Gitlab-cicd-note-github/02.md)
+
+* [第三章：優化 CI/CD 設定檔]
 
 ## 待處理
 

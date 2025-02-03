@@ -14,7 +14,7 @@
 
 * [第二章：語法整理 (持續更新)](https://github.com/michaelchen1225/CICD/blob/main/GitLab%20CICD/Gitlab-cicd-note-github/02.md)
 
-* [第三章：優化 CI/CD 設定檔]
+* [第三章：優化 CI/CD 設定檔](https://github.com/michaelchen1225/CICD/blob/main/GitLab%20CICD/Gitlab-cicd-note-github/03.md)
 
 ## 待處理
 

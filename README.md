@@ -16,6 +16,10 @@
 
 * [第三章：優化 CI/CD 設定檔](https://github.com/michaelchen1225/CICD/blob/main/GitLab%20CICD/Gitlab-cicd-note-github/03.md)
 
-## 待處理
+* [第四章：註冊 gitlab runner](https://github.com/michaelchen1225/CICD/blob/main/GitLab%20CICD/Gitlab-cicd-note-github/04-regist-runner.md)
 
-* 甚麼是 webhook？
+* [第五章：使用場景](https://github.com/michaelchen1225/CICD/blob/main/GitLab%20CICD/Gitlab-cicd-note-github/05-use-case.md)
+
+* [補充：如何 commit 時跳過 CI/CD ?](https://github.com/michaelchen1225/CICD/blob/main/GitLab%20CICD/Gitlab-cicd-note-github/06-how-to-skip.md)
+
+## 待處理

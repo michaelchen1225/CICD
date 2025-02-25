@@ -39,6 +39,8 @@ sudo systemctl status gitlab-runner
 
 ## 註冊 gitlab runner
 
+(https://docs.gitlab.com/runner/register/)
+
 > 事前需準備一個 gitlab repo
 
 ```bash

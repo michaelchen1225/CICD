@@ -13,6 +13,7 @@
 * [安裝 gitlab runner](#安裝-gitlab-runner)
 
 * [註冊 gitlab runner](#註冊-gitlab-runner)
+  * [使用指令註冊 runner](#使用指令註冊-runner)
 
 * [使用 runner tag (指定註冊的 runner 來承接 Job)](#使用-runner-tag-指定註冊的-runner-來承接-job)
 
@@ -75,6 +76,19 @@ sudo gitlab-runner register
   * Gitlab repo --> gitlab-runner --> executor 的關係像是：老闆 --> 工人 --> 工作方式
 
   * 註冊完成後，可以在 GitLab 的 repo 中，進入 `Settings` -> `CI/CD` -> `Runners`，看到剛剛註冊的 runner。
+
+### 使用指令註冊 runner
+
+```bash
+sudo gitlab-runner register \
+  --non-interactive \
+  --url "https://gitlab.com/" \
+  --token "$RUNNER_TOKEN" \
+  --executor "docker" \
+  --docker-image docker:19.03 \
+  --description "docker-runner"
+```
+>  RUNNER_TOKEN：An alternative to REGISTRATION_TOKEN the value should be the one found in an existing config.toml from an already registered runner
 
 ## 使用 runner tag (指定註冊的 runner 來承接 Job)
 
@@ -150,3 +164,28 @@ gitlab-runner unregister --url <runner-url> --token <runner-token>
 ```
 
 
+or
+
+```bash
+gitlab-runner verify --delete -t <runner-token> -u <runner-url>
+``` 
+
+## 手動設定 /etc/gitlab-runner/config.toml
+
+* 停止 gitlab-runner：
+
+```bash
+sudo gitlab-runner stop
+```
+
+* 編輯 /etc/gitlab-runner/config.toml：
+
+```bash
+sudo vi /etc/gitlab-runner/config.toml
+```
+
+* 修改後，重新啟動 gitlab-runner：
+
+```bash
+sudo gitlab-runner start
+```

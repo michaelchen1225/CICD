@@ -33,7 +33,7 @@ deploy_airflow_service:
 gitlab-runner ALL=(ALL) NOPASSWD: /usr/bin/rsync
 ```
 
-### 打包 docker image & push 到 GitLab registry (with TLS)
+### 打包 docker image & push 到 GitLab registry
 
 > [Official doc](https://docs.gitlab.com/ee/ci/docker/using_docker_build.html#use-docker-in-docker-executor)
 
@@ -44,13 +44,13 @@ image_build:
   services:
     - name: docker:19.03-dind # 
   tags: 
-    - <docker executor>
+    - <docker executor> 
   variables:
     DOCKER_TLS_CERTDIR: "/certs"
   script:
     - docker build -t $CI_REGISTRY_IMAGE/$CI_PROJECT_NAME:${IMAGE_TAG} .
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-    - docker push $CI_REGISTRY_IMAGE/CI_PROJECT_NAME:${IMAGE_TAG}
+    - docker push $CI_REGISTRY_IMAGE/$CI_PROJECT_NAME:${IMAGE_TAG}
 ```
 
 > When you use the dind service, you must instruct Docker to talk with the daemon started inside of the service.

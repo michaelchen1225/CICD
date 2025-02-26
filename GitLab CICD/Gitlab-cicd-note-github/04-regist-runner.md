@@ -91,9 +91,6 @@ sudo gitlab-runner register -n \
 ```
 
 
-
->  **RUNNER_TOKEN**：An alternative to REGISTRATION_TOKEN the value should be the one found in an existing config.toml from an already registered runner
-
 ## 使用 runner tag (指定註冊的 runner 來承接 Job)
 
 * 編輯 .gitlab-ci.yml：

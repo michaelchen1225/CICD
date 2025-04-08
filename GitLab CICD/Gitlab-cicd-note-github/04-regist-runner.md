@@ -19,7 +19,7 @@
 
 * [列出 server 上註冊過的 runner & 確認 runner 是否活著](#列出-server-上註冊過的-runner--確認-runner-是否活著)
 
-* 
+* [Gitlab Runner 罷工了怎麼辦？](#gitlab-runner-罷工了怎麼辦)
 
 * [移除 runner](#移除-runner)
 

@@ -194,6 +194,8 @@ gitlab-runner restart
 gitlab-runner run
 ```
 
+> 參考：(https://stackoverflow.com/questions/34625885/gitlab-ci-builds-remains-pending)
+
 ## 移除 runner
 
 * 先列出 server 上註冊過的 runner：

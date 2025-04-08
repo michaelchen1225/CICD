@@ -1,4 +1,4 @@
-# 在自己的 server 上註冊 gitlab runner
+# 在自己的 server 上註冊 Gitlab Runner
 
 如果想要讓 .gitlab-ci.yml 的 script 跑在自己的 server 上，可以參考以下步驟：
 
@@ -18,6 +18,8 @@
 * [使用 runner tag (指定註冊的 runner 來承接 Job)](#使用-runner-tag-指定註冊的-runner-來承接-job)
 
 * [列出 server 上註冊過的 runner & 確認 runner 是否活著](#列出-server-上註冊過的-runner--確認-runner-是否活著)
+
+* 
 
 * [移除 runner](#移除-runner)
 
@@ -141,6 +143,55 @@ gitlab-runner list
 
 ```bash
 gitlab-runner verify
+```
+
+## Gitlab Runner 罷工了怎麼辦？
+
+之前遇到一種情況，明明 .gitlab-ci.yml 中的 tag 指定了以註冊的 Runner，但 Runner 卻一直不承接 Job，導致卡在「stuck」的狀態。
+
+解決方法：
+
+* 先確認 gitlab-runner 是否活著：
+
+```bash
+gitlab-runner verify
+```
+
+* 如果活著但不接任務，就是罷工(暫時不確定原因)，解法是重啟 gitlab-runner：
+
+```bash
+sudo gitlab-runner restart
+sudo gitlab-runner run 
+```
+
+之後如過在別的終端登入，使用 `ps aux` 能看到 gitlab-runner run 的 process 應該就 OK 了：
+
+```bash
+ps aux | grep gitlab-runner
+```
+
+---
+
+* 如果還是不行，先確認 gitlab-runner.service 的狀況：
+
+```bash
+systemctl status gitlab-runner.service
+```
+
+> 有錯誤的話可以去看 log，也可以直接重啟。
+
+* 重啟 gitlab-runner.service：
+
+```bash
+systemctl restart gitlab-runner.service
+```
+
+* 再次用 systemctl status 確認狀態在 running 後，重新驗證並執行 gitlab-runner：
+
+```bash
+gitlab-runner verify
+gitlab-runner restart
+gitlab-runner run
 ```
 
 ## 移除 runner

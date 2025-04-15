@@ -53,7 +53,7 @@ sudo gitlab-runner register
 
 * Enter the GitLab instance URL (for example, https://gitlab.com/):
   * 自建的 gitlab server url：`http://your-gitlab-server.com/`
-  * 使用 GitLab.com：`
+  * 使用 GitLab.com：直接 Enter
   
 * Enter the registration token:
   * 在 GitLab 的 repo 中，進入 `Settings` -> `CI/CD` -> `Runners`，找到 `Project runners` 區塊，在「New Project Runner」旁邊有三個點，按下去之後複製 token 回到 terminal 貼上。

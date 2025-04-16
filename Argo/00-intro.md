@@ -6,7 +6,7 @@ https://medium.com/ikala-tech/argocd-%E7%9A%84%E8%A6%8F%E5%8A%83%E8%88%87%E5%AF%
 
 https://huanlin.cc/docs/devops/ci-cd/argo-cd/
 
-## 先搞定
+## 先搞定 (搞定)
 
 * 兩個 repo：
   * 程式碼：ci 負責打包 image、更新 k8s yaml image tag

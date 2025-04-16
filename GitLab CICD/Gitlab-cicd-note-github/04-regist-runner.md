@@ -13,6 +13,7 @@
 * [安裝 gitlab runner](#安裝-gitlab-runner)
 
 * [註冊 gitlab runner](#註冊-gitlab-runner)
+  * [註冊群組 runner](#註冊群組-runner)
   * [使用指令註冊 runner](#使用指令註冊-runner)
 
 * [使用 runner tag (指定註冊的 runner 來承接 Job)](#使用-runner-tag-指定註冊的-runner-來承接-job)
@@ -78,6 +79,12 @@ sudo gitlab-runner register
   * Gitlab repo --> gitlab-runner --> executor 的關係像是：老闆 --> 工人 --> 工作方式
 
   * 註冊完成後，可以在 GitLab 的 repo 中，進入 `Settings` -> `CI/CD` -> `Runners`，看到剛剛註冊的 runner。
+
+### 註冊群組 runner
+
+如果你想讓某群組中的所有 repo 共用同一個 runner，可以選擇註冊群組 runner，就不用每個 repo 都註冊一次了。
+
+至於註冊步驟，參考官網很快就搞定了：(https://docs.gitlab.com/ci/runners/runners_scope/#create-a-group-runner-with-a-runner-authentication-token)
 
 ### 使用指令註冊 runner
 

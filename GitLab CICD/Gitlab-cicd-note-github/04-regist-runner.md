@@ -10,19 +10,18 @@
 
 ## 目錄
 
-* [安裝 gitlab runner](#安裝-gitlab-runner)
-
-* [註冊 gitlab runner](#註冊-gitlab-runner)
-  * [註冊群組 runner](#註冊群組-runner)
-  * [使用指令註冊 runner](#使用指令註冊-runner)
-
-* [使用 runner tag (指定註冊的 runner 來承接 Job)](#使用-runner-tag-指定註冊的-runner-來承接-job)
-
-* [列出 server 上註冊過的 runner & 確認 runner 是否活著](#列出-server-上註冊過的-runner--確認-runner-是否活著)
-
-* [Gitlab Runner 罷工了怎麼辦？](#gitlab-runner-罷工了怎麼辦)
-
-* [移除 runner](#移除-runner)
+- [在自己的 server 上註冊 Gitlab Runner](#在自己的-server-上註冊-gitlab-runner)
+  - [目錄](#目錄)
+  - [安裝 gitlab runner](#安裝-gitlab-runner)
+  - [註冊 gitlab runner](#註冊-gitlab-runner)
+    - [註冊群組 runner](#註冊群組-runner)
+    - [使用指令註冊 runner](#使用指令註冊-runner)
+    - [Shell executer 的權限問題](#shell-executer-的權限問題)
+  - [使用 runner tag (指定註冊的 runner 來承接 Job)](#使用-runner-tag-指定註冊的-runner-來承接-job)
+  - [列出 server 上註冊過的 runner \& 確認 runner 是否活著](#列出-server-上註冊過的-runner--確認-runner-是否活著)
+  - [Gitlab Runner 罷工了怎麼辦？](#gitlab-runner-罷工了怎麼辦)
+  - [移除 runner](#移除-runner)
+  - [手動設定 /etc/gitlab-runner/config.toml](#手動設定-etcgitlab-runnerconfigtoml)
 
 ## 安裝 gitlab runner
 
@@ -80,6 +79,7 @@ sudo gitlab-runner register
 
   * 註冊完成後，可以在 GitLab 的 repo 中，進入 `Settings` -> `CI/CD` -> `Runners`，看到剛剛註冊的 runner。
 
+
 ### 註冊群組 runner
 
 如果你想讓某群組中的所有 repo 共用同一個 runner，可以選擇註冊群組 runner，就不用每個 repo 都註冊一次了。
@@ -98,6 +98,30 @@ sudo gitlab-runner register -n \
   --docker-privileged \
   --docker-volumes "/certs/client"
 ```
+
+### Shell executer 的權限問題
+
+一般情況剛註冊好的 shell executer 權限很小，如果要讓它能用 root 身分跑一些特定指令，可以參考以下步驟：
+
+```bash
+# 開放全部指令的權限
+echo "gitlab-runner ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/gitlab-runner
+```
+
+或
+
+```bash
+# 只開放特定指令的權限，例如 docker
+echo "gitlab-runner ALL=(ALL) NOPASSWD: /usr/bin/docker" > /etc/sudoers.d/gitlab-runner
+```
+
+設定完之後可以測試看看：
+
+```bash
+sudo -u gitlab-runner sudo docker ps
+```
+
+
 
 
 ## 使用 runner tag (指定註冊的 runner 來承接 Job)

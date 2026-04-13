@@ -1,6 +1,6 @@
 # CI/CD NOTE
 
-> 以 GitLab CI/CI 為主
+> 以 GitLab CI/CD 為主
 
 ## 先備知識
 

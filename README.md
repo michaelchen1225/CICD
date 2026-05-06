@@ -21,4 +21,11 @@
 * [第五章：使用場景](./GitLab%20CICD/Gitlab-cicd-note-github/05-use-case.md)
 
 * [補充：如何 commit 時跳過 CI/CD ?](./GitLab%20CICD/Gitlab-cicd-note-github/06-how-to-skip.md)
+
+* [補充：SonarQube --- 介紹與建置](./SonarQube/sonarqube.md)
+
+* [補充：SonarQube --- 整合 GitLab CI/CD (Java)](./SonarQube/gitlab-ci-integration.md)
+
+* [補充：SonarQube --- 整合 GitLab CI/CD](./GitLab%20CICD/Gitlab-cicd-note-github/07-sonarqube.md)
+
 ## 待處理

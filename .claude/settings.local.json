@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:docs.sonarsource.com)",
+      "WebFetch(domain:www.sonarsource.com)",
+      "WebFetch(domain:community.sonarsource.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(curl -fsSL https://raw.githubusercontent.com/SonarSource/docker-sonarqube/master/example-compose-files/sq-with-postgres/docker-compose.yml)",
+      "WebFetch(domain:central.sonatype.com)",
+      "WebFetch(domain:docs.gitlab.com)"
+    ]
+  }
+}

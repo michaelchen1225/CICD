@@ -9,7 +9,11 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(curl -fsSL https://raw.githubusercontent.com/SonarSource/docker-sonarqube/master/example-compose-files/sq-with-postgres/docker-compose.yml)",
       "WebFetch(domain:central.sonatype.com)",
-      "WebFetch(domain:docs.gitlab.com)"
+      "WebFetch(domain:docs.gitlab.com)",
+      "Bash(git mv *)",
+      "Bash(head -n 395 \"SonarQube/02-gitlab-ci-integration.md\")",
+      "Bash(cat)",
+      "Bash(mv /tmp/doc2-new.md \"SonarQube/02-gitlab-ci-integration.md\")"
     ]
   }
 }

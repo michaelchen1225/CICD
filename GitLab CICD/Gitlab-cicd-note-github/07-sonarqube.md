@@ -1,19 +1,16 @@
-# SonarQube
+# SonarQube 與 GitLab CI/CD 整合
 
 ## 目錄
 
-- [SonarQube](#sonarqube)
+- [SonarQube 與 GitLab CI/CD 整合](#sonarqube-與-gitlab-cicd-整合)
   - [目錄](#目錄)
-  - [SonarQube 簡介](#sonarqube-簡介)
-    - [核心概念](#核心概念)
-    - [SonarQube vs SonarCloud](#sonarqube-vs-sonarcloud)
-    - [Community Build vs Developer Edition](#community-build-vs-developer-edition)
+  - [前言](#前言)
   - [運作架構](#運作架構)
-  - [實作](#實作)
-    - [用 Docker 架設 SonarQube Server](#用-docker-架設-sonarqube-server)
-    - [設定 GitLab CI/CD](#設定-gitlab-cicd)
-    - [設定 sonar-project.properties](#設定-sonar-projectproperties)
-    - [整合 GitLab CI/CD](#整合-gitlab-cicd)
+  - [整合步驟](#整合步驟)
+    - [Step 1：在 SonarQube 匯入專案](#step-1在-sonarqube-匯入專案)
+    - [Step 2：設定 GitLab CI/CD Variables](#step-2設定-gitlab-cicd-variables)
+    - [Step 3：建立 sonar-project.properties](#step-3建立-sonar-projectproperties)
+    - [Step 4：在 .gitlab-ci.yml 加入掃描 job](#step-4在-gitlab-ciyml-加入掃描-job)
   - [技巧整理](#技巧整理)
     - [讓 Quality Gate 卡住 Pipeline](#讓-quality-gate-卡住-pipeline)
     - [排除特定檔案或目錄](#排除特定檔案或目錄)
@@ -22,42 +19,21 @@
 
 ---
 
-## SonarQube 簡介
+## 前言
 
-SonarQube 是一套**靜態程式碼分析**平台，能夠自動掃描程式碼並找出潛在的問題，例如 Bug、安全漏洞、或不良的寫法。將 SonarQube 整合進 CI/CD pipeline 後，每次 push 就會自動跑一次掃描，讓程式碼品質問題在進入主線之前就被抓出來。
+本章專注在「**如何把 SonarQube 接到 GitLab CI/CD pipeline**」。
 
-### 核心概念
+關於 SonarQube 本身的介紹、自架步驟與整合 GitLab 的完整設定流程，請直接參考 [`SonarQube/`](../../SonarQube/) 資料夾下的文章：
 
-| 名詞 | 說明 |
-|------|------|
-| **Bug** | 會導致程式執行錯誤或不預期行為的程式碼缺陷 |
-| **Vulnerability** | 安全漏洞，例如 SQL injection、未驗證的輸入等，需要立即修復 |
-| **Security Hotspot** | 安全敏感的程式碼段，需要人工判斷是否構成真正的風險 |
-| **Code Smell** | 不影響功能、但影響可讀性與可維護性的壞味道，例如過度複雜的函式、重複的程式碼 |
-| **Coverage** | 測試涵蓋率，代表有多少程式碼被自動化測試涵蓋 |
-| **Quality Gate** | 一組品質門檻條件，例如「新增的 Bug 必須為零」、「Coverage 不得低於 80%」，全部通過才算過關 |
+- [01-sonarqube.md](../../SonarQube/01-sonarqube.md)：SonarQube 簡介、核心概念、版本比較
+- [02-gitlab-ci-integration.md](../../SonarQube/02-gitlab-ci-integration.md)：完整的 GitLab CI 整合步驟（匯入專案、設定變數、撰寫 `.gitlab-ci.yml`）
+- [03-quality-gate-design.md](../../SonarQube/03-quality-gate-design.md)：Quality Gate 設計（PoC / Product）
+- [04-quality-gate-and-results.md](../../SonarQube/04-quality-gate-and-results.md)：Quality Gate 與掃描結果判讀
+- [05-quality-profile.md](../../SonarQube/05-quality-profile.md)：Quality Profile 規則調整
 
-其中 **Quality Gate** 是最重要的概念，它就像是 CI 的最後一道關卡——只要設定好門檻，掃描結果不達標就讓 Pipeline 失敗，阻止問題程式碼合入主線。
+本章僅針對 GitLab CI 端常用的整合技巧做整理，使用前請先依上述文章完成基本整合。
 
-### SonarQube vs SonarCloud
-
-* **SonarQube**：自架版本，需要自己準備 Server、管理資料庫與升級。適合需要資料留在內部的環境。
-
-* **SonarCloud**：SaaS 版本，由 SonarSource 負責維護基礎設施。對開源專案免費，且 Free Plan 就包含完整的分支分析功能。
-
-兩者底層的分析引擎相同，差別主要在於「自架 vs 雲端」。本文以自架的 SonarQube 為主。
-
-### Community Build vs Developer Edition
-
-| 功能 | Community Build (免費) | Developer Edition (付費) |
-|------|----------------------|------------------------|
-| 靜態分析 | ✅ | ✅ |
-| Quality Gate | ✅ | ✅ |
-| 支援語言 | 20+ | 30+ |
-| **分支分析** | ❌（只能分析主線） | ✅ |
-| **PR 裝飾** | ❌ | ✅ |
-
-> Community Build 最大的限制是只能分析主線（main/master），無法針對 feature branch 或 Merge Request 做個別的分析。如果要在每個 MR 上看到掃描結果，需要升級到 Developer Edition 或改用 SonarCloud。
+整合的目標：每次 push 觸發 pipeline 時，自動跑一次掃描，並讓 Quality Gate 不過時 pipeline 直接失敗，阻擋問題程式碼合入主線。
 
 ---
 
@@ -74,14 +50,14 @@ SonarQube Server  ◄──── sonar-project.properties (專案設定)
       │  (Compute Engine 處理結果)
       ▼
 SonarQube Dashboard (Web UI)
-      │  (顯示 Quality Gate 結果)
+      │  (回傳 Quality Gate 結果)
       ▼
 Pipeline 通過 or 失敗
 ```
 
-整個流程分三個角色：
+整個流程三個角色：
 
-* **sonar-scanner**：CLI 工具，在 CI 中被觸發，負責讀取原始碼並把分析結果送到 Server。
+* **sonar-scanner**：CLI 工具，在 CI job 中被觸發，負責讀取原始碼並把分析結果送到 Server。
 
 * **SonarQube Server**：接收分析結果後，由 Compute Engine 計算指標、更新資料庫，並透過 Web UI 呈現報告。
 
@@ -89,50 +65,32 @@ Pipeline 通過 or 失敗
 
 ---
 
-## 實作
+## 整合步驟
 
-> [Official Documentation](https://docs.sonarsource.com/sonarqube-community-build/server-installation/from-docker-image/prepare-installation)
+### Step 1：在 SonarQube 匯入專案
 
-### 用 Docker 架設 SonarQube Server
+登入 SonarQube → **Create Project** → 選擇 **GitLab**，依畫面指示輸入：
 
-最快的方式是直接用 Docker 跑 Community Build：
+* **Configuration name**：隨便取一個名字，例如 `GitLab CI`
+* **GitLab API URL**：例如 `https://gitlab.com/api/v4`
+* **Personal Access Token**：在 GitLab 產生一個 [Personal Access Token](https://docs.gitlab.com/user/profile/personal_access_tokens/)，權限選 `api` (可以使用 service account 產生，或是個人帳號產生都可以)
 
-```bash
-docker run -d --name sonarqube \
-  -p 9000:9000 \
-  -v sonarqube_data:/opt/sonarqube/data \
-  -v sonarqube_extensions:/opt/sonarqube/extensions \
-  -v sonarqube_logs:/opt/sonarqube/logs \
-  sonarqube:community
-```
+選擇要分析的專案後按 **Import**，**New Code definition** 選 **Follows the instance's default** 即可，最後按 **Create projects**。
 
-啟動後，打開瀏覽器前往 `http://localhost:9000`，預設帳密為：
+匯入完成後，到 **My Account** → **Security** 產生一個 **User Token**（之後 CI 會用到），複製起來。
 
-* 帳號：`admin`
-* 密碼：`admin`
+### Step 2：設定 GitLab CI/CD Variables
 
-> 第一次登入後系統會要求更改密碼，這裡改成 `5tgb^YHN7ujm` 就好。
+在 GitLab repo → **Settings** → **CI/CD** → **Variables**，新增以下兩個變數：
 
-登入後選擇 Gitlab，他會要求輸入一些資訊：
+| 變數名稱 | 值 | 說明 |
+|---------|---|------|
+| `SONAR_HOST_URL` | `http://your-sonarqube-server:9000` | SonarQube Server 位址 |
+| `SONAR_TOKEN` | （剛才產生的 token） | 分析用的認證 token，建議勾選 **Masked** |
 
-* Configuration name：隨便取一個名字，例如 `GitLab CI`
+### Step 3：建立 sonar-project.properties
 
-* Gitlab api url：`https://gitlab.com/api/v4`
-
-* Personal access token：在 GitLab 產生一個 [Personal Access Token](https://docs.gitlab.com/user/profile/personal_access_tokens/)，權限選 `api`，複製 token 貼上去。
-
-
-然後選擇你想要分析的專案，右邊按下 Import，最後會要你選擇 **New Code definition**——這個設定決定 Quality Gate 把哪些程式碼當成「新程式碼」來檢查。直接選 **Follows the instance's default**（預設是 Previous version）即可，之後可以再針對個別專案調整。按下 **Create projects** 完成匯入。
-
-### 設定 GitLab CI/CD 
-
-接著點選你想要做分析的專案，然後選擇 Gitlab CI，他會一步步帶你設定：
-
-
-
-### 設定 sonar-project.properties
-
-在 GitLab repo 的根目錄建立 `sonar-project.properties`：
+在 repo 根目錄建立 `sonar-project.properties`：
 
 ```properties
 sonar.projectKey=my-project-key
@@ -150,37 +108,30 @@ sonar.exclusions=**/node_modules/**,**/dist/**,**/coverage/**
 
 > `sonar.projectKey` 必須與 SonarQube Server 上建立的 Project Key 完全一致。
 
-### 整合 GitLab CI/CD
-
-**Step 1**：在 GitLab 的 repo 中，進入 **Settings** → **CI/CD** → **Variables**，新增以下兩個變數：
-
-| 變數名稱 | 值 | 說明 |
-|---------|---|------|
-| `SONAR_HOST_URL` | `http://your-sonarqube-server:9000` | SonarQube Server 位址 |
-| `SONAR_TOKEN` | （剛才產生的 token） | 分析用的認證 token，建議勾選 **Masked** |
-
-**Step 2**：在 `.gitlab-ci.yml` 加入掃描 job：
+### Step 4：在 .gitlab-ci.yml 加入掃描 job
 
 ```yaml
 stages:
-  - test
+  - sonar_scan
 
 sonarqube-check:
-  stage: test
-  image: sonarsource/sonar-scanner-cli:latest
+  stage: sonar_scan
+  tags:
+    - lndata-1-docker        # ← 換成你的 GitLab Runner tag
+  image: maven:3.9-eclipse-temurin-21
   variables:
     SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"
-    GIT_DEPTH: 0
+    GIT_DEPTH: "0"
   cache:
-    key: sonar-cache-${CI_COMMIT_REF_SLUG}
+    policy: pull-push
+    key: "sonar-cache-$CI_COMMIT_REF_SLUG"
     paths:
-      - .sonar/cache
+      - "${SONAR_USER_HOME}/cache"
   script:
-    - sonar-scanner
-      -Dsonar.host.url=${SONAR_HOST_URL}
-      -Dsonar.token=${SONAR_TOKEN}
-      -Dsonar.qualitygate.wait=true
+    - mvn verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -DskipTests
   allow_failure: false
+  rules:
+    - if: $CI_COMMIT_BRANCH == "test-va" && $CI_PIPELINE_SOURCE == "push"
 ```
 
 push 之後，Pipeline 跑完就能在 SonarQube Dashboard 上看到分析結果。

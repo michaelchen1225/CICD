@@ -115,6 +115,9 @@
 
 * `01-sonarqube.md` — 介紹與建置
 * `02-gitlab-ci-integration.md` — 整合 GitLab CI/CD（前置作業 + Variables + pom.xml + .gitlab-ci.yml 範例）
-* `03-quality-gate-and-results.md` — Quality Gate 與掃描結果判讀（Dashboard / Issues / Hotspots / 自訂 QG / 測試實戰）
+* `03-quality-gate-design.md` — Quality Gate 設計（PoC / Product 兩階段範例 + 評級標準）
+* `04-quality-gate-and-results.md` — Quality Gate 與掃描結果判讀（Dashboard / Issues / Hotspots / 自訂 QG / 測試實戰）
+* `05-quality-profile.md` — Quality Profile 介紹（QP vs QG 差異、Sonar way 角色、何時才需要客製）
+* `maintainability-considerations.md` — Maintainability 的長期考量（New Code vs Overall、AI 時代調整）
 
 跨檔連結用相對路徑（`01-sonarqube.md#xxx`），不要寫絕對 URL。新增章節時記得同步更新根目錄 `README.md` TOC（規則見根目錄 CLAUDE.md）。

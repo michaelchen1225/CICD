@@ -26,7 +26,13 @@
 
 * [補充：SonarQube (2) --- 整合 GitLab CI/CD (Java)](./SonarQube/02-gitlab-ci-integration.md)
 
-* [補充：SonarQube (3) --- Quality Gate 與掃描結果判讀](./SonarQube/03-quality-gate-and-results.md)
+* [補充：SonarQube (3) --- Quality Gate 設計（PoC / Product）](./SonarQube/03-quality-gate-design.md)
+
+* [補充：SonarQube (4) --- Quality Gate 與掃描結果判讀](./SonarQube/04-quality-gate-and-results.md)
+
+* [補充：SonarQube (5) --- Quality Profile](./SonarQube/05-quality-profile.md)
+
+* [補充：SonarQube --- Maintainability 的長期考量](./SonarQube/maintainability-considerations.md)
 
 * [補充：SonarQube --- 整合 GitLab CI/CD (草稿)](./GitLab%20CICD/Gitlab-cicd-note-github/07-sonarqube.md)
 

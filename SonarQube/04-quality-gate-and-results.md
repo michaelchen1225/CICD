@@ -16,6 +16,13 @@
   - [跳過測試的專案怎麼處理 Quality Gate](#跳過測試的專案怎麼處理-quality-gate)
     - [三個解法概覽](#三個解法概覽)
     - [建立自訂 Quality Gate 詳細步驟](#建立自訂-quality-gate-詳細步驟)
+      - [方式 A：複製 Sonar way 後修改](#方式-a複製-sonar-way-後修改)
+        - [Step A1 — 從 Sonar way 複製](#step-a1--從-sonar-way-複製)
+        - [Step A2 — 移除不要的條件](#step-a2--移除不要的條件)
+      - [方式 B：從零建立空 QG](#方式-b從零建立空-qg)
+        - [Step B1 — Create 一個新的空 QG](#step-b1--create-一個新的空-qg)
+        - [Step B2 — 逐條加入條件](#step-b2--逐條加入條件)
+      - [Step C — 指派給專案（兩種方式共用）](#step-c--指派給專案兩種方式共用)
   - [Issues 與 Security Hotspots 的處理流程](#issues-與-security-hotspots-的處理流程)
     - [Issues 分類](#issues-分類)
     - [Issues 的處置動作](#issues-的處置動作)
@@ -160,19 +167,30 @@ Dashboard 上會看到 `New Code` 與 `Overall Code` 兩個分頁，這兩個是
 
 ### 建立自訂 Quality Gate 詳細步驟
 
-照 SonarQube Web UI 一步步走：
+建立自訂 QG 有兩種起手式，差別在於「以 Sonar way 為基底微調」還是「完全從零定義條件」。前者快、後者乾淨。實際選哪個取決於需求和現況：
 
-**Step 1 — 從預設 Sonar way 複製出來改**
+| 起手式 | 適用情境 | 優點 | 缺點 |
+| --- | --- | --- | --- |
+| **A. 複製 Sonar way 後修改** | 大多數條件想沿用預設，只想動一兩條（例如移掉 coverage） | 快、不會漏設 issue / hotspot 相關條件 | 帶進預設條件，需手動清掉不要的 |
+| **B. 從零建立空 QG** | 想完全照自家標準（例如 [PoC-Gate / Product-Gate](03-quality-gate-design.md)），不希望被預設條件混淆 | 條件數量可控、與設計表 1:1 對應 | 步驟多、需自己加上每一條 |
+
+下面兩種都走一遍。指派步驟兩者共用，列在最後。
+
+#### 方式 A：複製 Sonar way 後修改
+
+最常見的情境：跳過測試的專案要移掉 coverage 條件。
+
+##### Step A1 — 從 Sonar way 複製
 
 `Quality Gates`（頂部導覽列）→ 點選 `Sonar way` → 右上角找 `Copy` 按鈕（不是 `Edit`，因為 Sonar way 是內建 gate 不能直接改）→ 取個有意義的名字，例如 `Sonar way (no coverage)` → 按 `Copy`
 
-> 為什麼不從零開始建：複製可以保留「Reliability rating on new code = A」、「Security rating on new code = A」這些 issue / hotspot 相關的條件，避免漏掉。
+> 為什麼從複製開始：可以保留「Reliability rating on new code = A」、「Security rating on new code = A」這些 issue / hotspot 相關的條件，避免漏設。
 
-<!-- ![alt text](placeholder-step1-copy-gate.png) -->
+<!-- ![alt text](placeholder-stepA1-copy-gate.png) -->
 
-**Step 2 — 移除 coverage 條件**
+##### Step A2 — 移除不要的條件
 
-進入剛複製出來的 `Sonar way (no coverage)` 頁面 → 在條件列表中找到 `New code has sufficient test coverage` 那一條 → 右側點 `Delete`（垃圾桶圖示）→ 確認
+進入剛複製出來的 `Sonar way (no coverage)` 頁面 → 在條件列表中找到 `New code has sufficient test coverage` → 右側點 `Delete`（垃圾桶圖示）→ 確認。
 
 剩下的應該是 Sonar way 原本四條去掉 coverage 之後的三條：
 
@@ -180,14 +198,49 @@ Dashboard 上會看到 `New Code` 與 `Overall Code` 兩個分頁，這兩個是
 * `All new security hotspots are reviewed`
 * `New code has limited duplications`（Duplicated Lines ≤ 3.0%）
 
+如果還想調整其他條件（例如把 issues 從「= 0」放寬成允許某個 rating），直接在這頁繼續 `Edit` / `Add Condition`。
 
-**Step 3 — 指派給專案**
+#### 方式 B：從零建立空 QG
 
-進到目標專案（例如 `gen-bi`）→ 左側選單 `Project Settings → Quality Gate` → 從 `Default` 切到 `Always use a specific Quality Gate` → 下拉選 `Sonar way (no coverage)` → 按 `Save`
+當條件設計跟 Sonar way 差異大時（典型例：[03-quality-gate-design.md](03-quality-gate-design.md) 的 PoC-Gate / Product-Gate），從空白開始比較乾淨。
 
+##### Step B1 — Create 一個新的空 QG
 
+`Quality Gates`（頂部導覽列）→ 左側面板上方 → 點 `Create` → 輸入名稱（例如 `PoC-Gate` 或 `Product-Gate`）→ 按 `Save`。
 
-> 想把這個 gate 設成所有專案的全域預設？回到 `Quality Gates → Sonar way (no coverage) → Set as default`。但建議只在「絕大多數專案都跳過測試」的情境才這樣做，否則仍個別指派比較精準。
+點選 `Add Condition`，會分成兩區：`Conditions on New Code` 與 `Conditions on Overall Code`。
+
+##### Step B2 — 逐條加入條件
+
+進入新建的 QG → 點 `Add Condition` → 跳出對話框依序填三個欄位：
+
+1. **Where?** — 選 `On New Code`（建議幾乎所有條件都選這個，遵循 Clean as You Code 原則）
+2. **Quality Gate fails when** — 選 metric，例如 `Security Rating`、`Coverage`、`Duplicated Lines (%)`、`Security Hotspots Reviewed`
+3. **Operator + Value** — metric 不同會跳不同的輸入欄位：
+   - Rating 類：選 `is worse than` → 下拉選 A / B / C / D
+   - 比例類：選 `is less than` / `is greater than` → 輸入數值（例如 `70.0`、`3.0`、`100`）
+
+每加一條按 `Add Condition`，重複到全部條件設完。
+
+範例：依 [PoC-Gate 設計](03-quality-gate-design.md#qg-1poc-gate) 設定的話會依序加三條：
+
+| # | 條件 | Where | Operator | Value |
+| --- | --- | --- | --- | --- |
+| 1 | Security Rating | On New Code | is worse than | C |
+| 2 | Reliability Rating | On New Code | is worse than | C |
+| 3 | Maintainability Rating | On New Code | is worse than | D |
+
+Coverage / Duplicated Lines / Security Hotspots Reviewed 三條不加（PoC 階段刻意不卡）。注意 Hotspots Reviewed 預設值是 100%，**「不加」是指這條 QG 完全不包含這個 metric**，跟「加了但門檻放鬆」不一樣——從零建立的空 QG 預設就是沒有任何條件，所以省略即生效。
+
+> 加完每條後 SonarQube 會即時顯示在 `Conditions on New Code` 表格裡，可隨時 `Edit` 或 `Delete`。
+
+#### Step C — 指派給專案（兩種方式共用）
+
+無論用方式 A 或 B 建出來的 QG，最後都要指派給目標專案才會生效：
+
+進到目標專案（例如 `gen-bi`）→ 左側選單 `Project Settings → Quality Gate` → 從 `Default` 切到 `Always use a specific Quality Gate` → 下拉選剛建好的 QG → 按 `Save`。
+
+> 想把這個 gate 設成所有專案的全域預設？回到 `Quality Gates → 該 QG → Set as default`。但建議只在「絕大多數專案都套同一組標準」的情境才這樣做，否則個別指派比較精準。
 
 ---
 
@@ -509,4 +562,4 @@ sonarqube-check:
 * **跳過測試的專案**要建自訂 Quality Gate 移掉 coverage 條件、改用 Issues / Hotspots / Duplications 三條把關，否則 pipeline 永遠紅、把關意義就消失了。
 * **Issues 跟 Security Hotspots 的差別在誰判斷**：Issues 是 SonarQube 確定的問題、Hotspots 是它請你 review 的敏感程式碼。預設 Sonar way 要求 New Code 上的 Hotspots 100% Reviewed 才能 pass。
 
-整套 SonarQube 介紹到這裡告一段落：[01](01-sonarqube.md) 部署、[02](02-gitlab-ci-integration.md) 接 GitLab CI、[03](03-quality-gate-and-results.md)（本篇）讀結果與調 Quality Gate。
+SonarQube 的核心流程：[01](01-sonarqube.md) 部署、[02](02-gitlab-ci-integration.md) 接 GitLab CI、[03](03-quality-gate-design.md) Quality Gate 設計、[04](04-quality-gate-and-results.md)（本篇）讀結果與調 Quality Gate、[05](05-quality-profile.md) Quality Profile。

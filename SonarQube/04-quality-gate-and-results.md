@@ -465,6 +465,8 @@ rules:
 
 **想在每個 MR 上看到分析結果**：必須升 Developer Edition 或改用 SonarCloud，沒有免費的迴避方法。硬要在 MR 上跑分析的話，結果會跟主分析線互相覆蓋，Dashboard 變得毫無意義。
 
+> 若可接受非官方支援的代價，社群有第三方 plugin（`mc1arke/sonarqube-community-branch-plugin`）能在 Community Build 上解開這個限制——導入流程、`.gitlab-ci.yml` 改寫、風險評估見 [06-mr-pr-integration.md](06-mr-pr-integration.md)。
+
 ---
 
 ## Cache 與 GIT_DEPTH 細節

@@ -417,7 +417,7 @@ sonarqube-check:
 |------|---------|------|
 | 1. cache.paths 移除 `sonar-scanner/` | wizard 多放一行 → 拿掉 | `sonar-scanner/` 是 standalone CLI scanner 才會產的目錄，Maven plugin 不會用到它，留著只是 cache 浪費 |
 | 2. script 加 `-DskipTests` | `mvn verify ... sonar:sonar` → 加 `-DskipTests` | 公司專案目前沒有可用的測試（Spring Boot 自動產的 context-load 測試需要 MongoDB / AWS 認證，CI 沒接，會直接 fail） |
-| 3. rules 移除 MR 與其他無關 branch | 4 條 → 1 條 | Community Build 不支援 MR / branch analysis，多 branch 推分析會互相覆蓋 Dashboard（理由見[下一篇 Branch / MR pipeline 行為](04-quality-gate-and-results.md#branch--mr-pipeline-行為)）。只保留實際的「主分析線」一條 |
+| 3. rules 移除 MR 與其他無關 branch | 4 條 → 1 條 | Community Build 不支援 MR / branch analysis，多 branch 推分析會互相覆蓋 Dashboard（理由見[下一篇 Branch / MR pipeline 行為](04-quality-gate-and-results.md#branch--mr-pipeline-行為)）。只保留實際的「主分析線」一條。若導入 [06 章的第三方 plugin 方案](06-mr-pr-integration.md)，MR rule 可以加回來 |
 | 4. 加 `tags` | 沒有 → 加 | 公司用 self-hosted Runner，需要指定 tag；wizard 不知道公司 runner 名所以沒加 |
 | 5. allow_failure 切 `false` | `true` → `false`（**接好之後再切**） | 第一階段先依 wizard 預設保留 `true`，跑幾次調整 Quality Gate 後再切 `false` 開始正式把關（見[下一篇 漸進採用](04-quality-gate-and-results.md#漸進採用先-allow_failure-後切-false)） |
 

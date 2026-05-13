@@ -85,6 +85,7 @@
 * 不支援 Branch analysis 與 MR decoration——非 main 分支會混在一起寫入同一份分析
 * 文章裡建議的 `rules:` 寫法（只在特定分支跑 SonarQube）是 Community Build 下的合理變通，不是「最佳實踐」
 * 不要寫「在 MR 上會看到 SonarQube 評論」這種話，那是 Developer Edition+ 才有
+* **例外**：若團隊接受第三方 plugin，可用 [`06-mr-pr-integration.md`](./06-mr-pr-integration.md) 介紹的 `mc1arke/sonarqube-community-branch-plugin` 解鎖 branch analysis 與 PR decoration——但要明寫非官方、升 commercial 可能 lose data 等風險
 
 ### Token 三件組
 
@@ -118,6 +119,7 @@
 * `03-quality-gate-design.md` — Quality Gate 設計（PoC / Product 兩階段範例 + 評級標準）
 * `04-quality-gate-and-results.md` — Quality Gate 與掃描結果判讀（Dashboard / Issues / Hotspots / 自訂 QG / 測試實戰）
 * `05-quality-profile.md` — Quality Profile 介紹（QP vs QG 差異、Sonar way 角色、何時才需要客製）
+* `06-mr-pr-integration.md` — MR/PR 整合（用 `mc1arke/sonarqube-community-branch-plugin` 解鎖 PR decoration）
 * `maintainability-considerations.md` — Maintainability 的長期考量（New Code vs Overall、AI 時代調整）
 
 跨檔連結用相對路徑（`01-sonarqube.md#xxx`），不要寫絕對 URL。新增章節時記得同步更新根目錄 `README.md` TOC（規則見根目錄 CLAUDE.md）。

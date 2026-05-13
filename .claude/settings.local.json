@@ -13,7 +13,8 @@
       "Bash(git mv *)",
       "Bash(head -n 395 \"SonarQube/02-gitlab-ci-integration.md\")",
       "Bash(cat)",
-      "Bash(mv /tmp/doc2-new.md \"SonarQube/02-gitlab-ci-integration.md\")"
+      "Bash(mv /tmp/doc2-new.md \"SonarQube/02-gitlab-ci-integration.md\")",
+      "WebFetch(domain:deepwiki.com)"
     ]
   }
 }

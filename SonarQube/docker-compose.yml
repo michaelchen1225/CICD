@@ -1,6 +1,6 @@
 services:
   sonarqube:
-    image: sonarqube:community
+    image: mc1arke/sonarqube-with-community-branch-plugin:26.4.0.121862-community
     container_name: sonarqube
     depends_on:
       db:
@@ -29,6 +29,7 @@ services:
       POSTGRES_DB: sonar
     volumes:
       - postgresql:/var/lib/postgresql
+      - postgresql:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
       interval: 10s

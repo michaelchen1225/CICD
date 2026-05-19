@@ -87,12 +87,14 @@
 * 不要寫「在 MR 上會看到 SonarQube 評論」這種話，那是 Developer Edition+ 才有
 * **例外**：若團隊接受第三方 plugin，可用 [`06-mr-pr-integration.md`](./06-mr-pr-integration.md) 介紹的 `mc1arke/sonarqube-community-branch-plugin` 解鎖 branch analysis 與 PR decoration——但要明寫非官方、升 commercial 可能 lose data 等風險
 
-### Token 三件組
+### Token 四件組
 
 * **Service Account PAT**（GitLab 端，scope: `api`）：給 SonarQube 用來匯入 repo / 建專案
 * **Personal PAT**（GitLab 端，scope: `read_api`，可選）：個人在 SonarQube 端的身份綁定
-* **Project Analysis Token**（SonarQube 端）：CI pipeline 跑 scanner 時用的 `SONAR_TOKEN`
-* 三者用途不可混用；寫整合步驟時必須分清楚是哪一個
+* **Project Analysis Token**（SonarQube 端，單一專案）：CI pipeline 跑 scanner 時用的 `SONAR_TOKEN`（**CI 預設選擇**）
+* **Global / User Analysis Token**（SonarQube 端，跨專案）：admin 自動化流程或本機 API 探索用，CI 不推薦
+* 四者用途不可混用；寫整合步驟時必須分清楚是哪一個
+* 詳細生命週期（產生、scope、Expires、輪替 SOP、外洩處置）集中在 [`07-token-management.md`](./07-token-management.md)，其他章節寫到 token 時應連回此章而非重複敘述
 
 ### GitLab Service Account vs Bot User
 
@@ -120,6 +122,7 @@
 * `04-quality-gate-and-results.md` — Quality Gate 與掃描結果判讀（Dashboard / Issues / Hotspots / 自訂 QG / 測試實戰）
 * `05-quality-profile.md` — Quality Profile 介紹（QP vs QG 差異、Sonar way 角色、何時才需要客製）
 * `06-mr-pr-integration.md` — MR/PR 整合（用 `mc1arke/sonarqube-community-branch-plugin` 解鎖 PR decoration）
+* `07-token-management.md` — Token 管理（四種 token 全景、Expires 策略、輪替 SOP、外洩處置流程）
 * `maintainability-considerations.md` — Maintainability 的長期考量（New Code vs Overall、AI 時代調整）
 
 跨檔連結用相對路徑（`01-sonarqube.md#xxx`），不要寫絕對 URL。新增章節時記得同步更新根目錄 `README.md` TOC（規則見根目錄 CLAUDE.md）。

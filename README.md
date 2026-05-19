@@ -34,6 +34,8 @@
 
 * [補充：SonarQube (6) --- MR / PR 整合（解鎖 Community Build 的 branch / PR decoration）](./SonarQube/06-mr-pr-integration.md)
 
+* [補充：SonarQube (7) --- Token 管理](./SonarQube/07-token-management.md)
+
 * [補充：SonarQube --- Maintainability 的長期考量](./SonarQube/maintainability-considerations.md)
 
 * [補充：SonarQube --- 整合 GitLab CI/CD (草稿)](./GitLab%20CICD/Gitlab-cicd-note-github/07-sonarqube.md)

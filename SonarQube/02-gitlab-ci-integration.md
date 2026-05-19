@@ -8,7 +8,7 @@
 - [前置作業：在 SonarQube 建立專案 + 產 Token](#前置作業在-sonarqube-建立專案--產-token)
   - [Path A — Create a local project](#path-a--create-a-local-project)
   - [Path B — Import from GitLab](#path-b--import-from-gitlab)
-  - [三種 Token 一次釐清](#三種-token-一次釐清)
+  - [Token 一覽](#token-一覽)
 - [在 GitLab 設 CI/CD Variables](#在-gitlab-設-cicd-variables)
 - [設定 pom.xml](#設定-pomxml)
 - [補充：`sonar-project.properties` 何時用](#補充sonar-projectproperties-何時用)
@@ -127,16 +127,7 @@ Community Build 下兩條路徑的分析能力完全一樣（MR decoration、bra
 - **第 1 段** Add environment variables：點 `Generate a token` 產 Project Analysis Token（**Expires 選 90 天**），依指示在 GitLab 設 `SONAR_TOKEN` 與 `SONAR_HOST_URL`（細節見[下一節](#在-gitlab-設-cicd-variables)）
 - **第 2 段** Create or update the configuration file：選 build tool，wizard 產出對應 yaml 片段
 
-**Project Analysis Token Expires 怎麼選**
-
-| 選項 | 取捨 |
-|------|------|
-| 30 / 60 天 | 安全性最好但輪替負擔重，容易忘 |
-| **90 天**（推薦）| 一季輪替一次，與安全月、季度檢查節奏對得上 |
-| 1 年 | 維運輕鬆，但外洩到失效最大 365 天，太久 |
-| No expiration | **絕對不要選** |
-
-統一用 90 天，到期日登記在密碼管理工具，到期前重產一把、更新 GitLab Variable 即可（`.gitlab-ci.yml` 不用改）。
+Project Analysis Token Expires 選 90 天的理由、輪替 SOP、外洩處置流程，集中寫在 [07-token-management.md](07-token-management.md)。
 
 #### CE 用戶的 fallback：開 bot user
 
@@ -149,15 +140,13 @@ GitLab CE 沒 Service Account，改用 instance admin 開普通 user 當 bot：
 
 代價：佔 license 席位、bot 帳號能 UI 登入（密碼要保管好）、需 instance admin。能用 Service Account 就用 Service Account。
 
-### 三種 Token 一次釐清
+### Token 一覽
 
-Path B 流程裡其實有三個 token，常被搞混：
+Path B 至少會經手三種 token（加上 SonarQube 端另兩種可選類型，共四種），生命週期管理見 [07-token-management.md](07-token-management.md)。本節僅給最簡指引：
 
-| Token | 在哪產 | 給誰用 | 做什麼 |
-|-------|--------|--------|--------|
-| **Service Account PAT**（`api`）| GitLab → group 的 Service accounts | SonarQube **Server** 永久使用 | 列 repo、處理 webhook 等 admin 級 GitLab API |
-| **個人 GitLab PAT**（`read_api`，選用）| GitLab → 自己 Access Tokens | SonarQube import wizard 暫時用 | 預設不需要；只有想用自己的權限視角覆寫 Service Account 時才用 |
-| **Project Analysis Token** | SonarQube → 專案 Analysis Method wizard | GitLab CI **Runner** | 上傳分析結果回 SonarQube |
+- **Service Account PAT**（GitLab 端，scope `api`）：SonarQube Server 用來呼叫 GitLab API
+- **個人 GitLab PAT**（`read_api`，選用）：wizard 暫時用，預設不需要
+- **Project Analysis Token**（SonarQube 端）：GitLab CI Runner 跑 scanner 時用，對應 GitLab Variable `SONAR_TOKEN`
 
 方向：**Service Account PAT 是 SonarQube → GitLab；Project Analysis Token 是 GitLab Runner → SonarQube**。
 

@@ -15,8 +15,8 @@
 | [07](07-sonarqube.md) | SonarQube 整合 | 把 SonarQube 接入 GitLab CI pipeline |
 | [08](08-cache.md) | Cache 設定與管理 | `.gitlab-ci.yml` cache 寫法、改 runner cache 路徑、查詢與維護 |
 
-## 事故記錄
+> 截圖統一收在 [`images/`](images/) 子資料夾。
 
-| 文件 | 說明 |
-|---|---|
-| [Oracle Instant Client 升級事故](connector-dockerfile-instantclient-upgrade-incident.md) | connector Dockerfile 從 Ubuntu 24.04 + Instant Client 23 降級到 22.04 + 21.13 的事故總結 |
+## 相關
+
+* CI/CD 實戰事故與案例總結已獨立至 [`../cases/`](../cases/) 資料夾。

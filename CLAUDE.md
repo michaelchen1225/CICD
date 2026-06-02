@@ -18,7 +18,8 @@ The repository has two layers of tables of contents and a sandbox:
 - **`01.md`** — the conceptual introduction (what CI/CD is, CI vs CD, common tooling). It sits at the root because it is the prerequisite reading before any GitLab-specific chapter.
 - **`GitLab CICD/`** — the GitLab-specific section.
   - `README.md` here is a near-empty stub. The *real* TOC for users is the root `README.md`; do not duplicate chapter listings into this stub.
-  - `Gitlab-cicd-note-github/` — the numbered chapter sequence (`01.md`, `02.md`, … `08-cache.md`), plus occasional non-numbered case-study / incident notes (e.g. `connector-dockerfile-instantclient-upgrade-incident.md`), plus all `image-*.png` screenshots referenced from those chapters. Numbered chapters are ordered by their prefix and the order is meaningful (later chapters assume earlier ones).
+  - `Gitlab-cicd-note-github/` — the numbered chapter sequence (`01.md`, `02.md`, … `08-cache.md`), with the screenshots they reference collected in the `images/` subfolder (referenced as `images/image-N.png`). Numbered chapters are ordered by their prefix and the order is meaningful (later chapters assume earlier ones). This folder also keeps its own `README.md` index table — update it too when chapters change here.
+  - `cases/` — standalone real-world case studies / incident postmortems (e.g. `connector-dockerfile-instantclient-upgrade-incident.md`), deliberately kept out of the numbered chapter sequence. These **are** documentation and belong in the root TOC (under the 案例 / 事故 section).
   - `cicd-tips/` — tips / reference notes (e.g. `pipeline-design-principles.md`) accompanied by a real-world `.gitlab-ci.yml` used as the worked example. The `.md` notes here **are** documentation and belong in the root TOC; the `.gitlab-ci.yml` is only the example artifact (not a TOC entry, and — unlike `cicd-test/` — it is part of this repo, with no nested `.git`).
   - `cicd-test/` — a **nested independent git repository** containing a sample `.gitlab-ci.yml`. It is a sandbox for testing pipeline syntax, not part of the notes themselves. Do not treat its contents as documentation, and do not commit it from the outer repo (it has its own `.git`).
 - **`SonarQube/`** — a parallel chapter series on SonarQube integration (`01-sonarqube.md` … `07-token-management.md`, plus `maintainability-considerations.md`). It has its own [`SonarQube/CLAUDE.md`](SonarQube/CLAUDE.md) carrying writing-style rules specific to that series — read it before editing anything under `SonarQube/`. All its chapters are listed in the root `README.md` TOC.
@@ -38,8 +39,9 @@ The repository has two layers of tables of contents and a sandbox:
 This applies to **any** documentation `.md` anywhere under the repo, including:
 
 - Root-level concept chapters (e.g. another one alongside `01.md`).
-- Numbered chapters **and** non-numbered case-study / incident notes inside `GitLab CICD/Gitlab-cicd-note-github/` (e.g. `08-cache.md`, `connector-dockerfile-instantclient-upgrade-incident.md`).
+- Numbered chapters inside `GitLab CICD/Gitlab-cicd-note-github/` (e.g. `08-cache.md`).
 - Tip / reference notes inside `GitLab CICD/cicd-tips/`.
+- Case-study / incident notes inside `GitLab CICD/cases/` (e.g. `connector-dockerfile-instantclient-upgrade-incident.md`).
 - Any chapter inside `SonarQube/`.
 - Any new note folder created later under the repo.
 - Any rename, deletion, or reorder of the above (keep every note under the `###` section that matches its folder — see the TOC structure below).
@@ -49,9 +51,10 @@ Do **not** add TOC entries for (these are not reader-facing notes): per-folder `
 The `## 目錄` is **categorised into `###` sections that mirror the repo's folders** — do NOT flatten it back into one undifferentiated list. The current sections, in order, are:
 
 1. **入門概念** — the root concept chapter (`01.md`).
-2. **GitLab CI/CD 筆記** — everything in `Gitlab-cicd-note-github/`: 第一~五章 first (numeric order, the meaningful reading sequence), then the `補充：` / `案例：` entries (skip-CI, cache, sonarqube draft, the incident note).
+2. **GitLab CI/CD 筆記** — everything in `Gitlab-cicd-note-github/`: 第一~五章 first (numeric order, the meaningful reading sequence), then the `補充：` entries (skip-CI, cache, sonarqube draft).
 3. **CI/CD 設計技巧（cicd-tips）** — notes in `cicd-tips/`.
-4. **SonarQube** — the `SonarQube/` series, `(1)`…`(7)` then `maintainability-considerations.md`.
+4. **案例 / 事故（cases）** — real-world case studies / incident postmortems in `cases/`.
+5. **SonarQube** — the `SonarQube/` series, `(1)`…`(7)` then `maintainability-considerations.md`.
 
 When updating the TOC:
 

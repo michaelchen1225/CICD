@@ -8,7 +8,7 @@
 
 ## 目錄
 
-> 依資料夾分四類:**入門概念** → **GitLab CI/CD 筆記** → **CI/CD 設計技巧** → **SonarQube**。
+> 依資料夾分五類:**入門概念** → **GitLab CI/CD 筆記** → **CI/CD 設計技巧** → **案例 / 事故** → **SonarQube**。
 
 ### 入門概念
 
@@ -34,13 +34,17 @@
 
 * [補充：SonarQube 整合 GitLab CI/CD（草稿）](./GitLab%20CICD/Gitlab-cicd-note-github/07-sonarqube.md)
 
-* [案例：Oracle Instant Client 升級事故總結](./GitLab%20CICD/Gitlab-cicd-note-github/connector-dockerfile-instantclient-upgrade-incident.md)
-
 ### CI/CD 設計技巧（cicd-tips）
 
 以實戰 `.gitlab-ci.yml` 為範例,拆解可轉移的 pipeline 設計原理。
 
 * [Pipeline 設計原理（實戰範例拆解）](./GitLab%20CICD/cicd-tips/pipeline-design-principles.md)
+
+### 案例 / 事故（cases）
+
+CI/CD 實戰中踩到的問題與事後總結(postmortem)。
+
+* [Oracle Instant Client 升級事故總結](./GitLab%20CICD/cases/connector-dockerfile-instantclient-upgrade-incident.md)
 
 ### SonarQube
 

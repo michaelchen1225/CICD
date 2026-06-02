@@ -1,0 +1,739 @@
+# ============================================================
+# CI/CD Pipeline — gen-bi
+# Driven by pom.xml SNAPSHOT versioning; build-once on dev,
+# promote/retag on pre-prod.
+# Branch model: feature/* → dev → pre-prod → master (FF-only)
+# Design & details: see ci-docs/pipeline.md
+# ============================================================
+
+stages:
+  - validate
+  - maven_build
+  - sentry_release   # before docker_build so dev image bakes a known SENTRY_RELEASE
+  - docker_build
+  - image_retag
+  - prepare_release  # bump pom.xml after the release tag is cut
+  - deploy
+  - sentry_mark
+
+# All non-deploy jobs are interruptible — newer pipeline cancels older one for the
+# same branch. Deploy / retag-with-side-effects jobs override this to false.
+default:
+  interruptible: true
+
+# ------------------------------------------------------------
+# Workflow rules — which pipelines run for which events
+# ------------------------------------------------------------
+workflow:
+  rules:
+    # MR into a long-lived branch
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ /^(dev|pre-prod|master)$/'
+    # Suppress duplicate "branch + MR" pipelines on the same commit
+    - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'
+      when: never
+    # Push to a long-lived branch (merge result)
+    - if: '$CI_COMMIT_BRANCH =~ /^(dev|pre-prod|master)$/ && $CI_PIPELINE_SOURCE == "push"'
+
+# ------------------------------------------------------------
+# Hidden mixins
+# ------------------------------------------------------------
+
+.validate_rules:
+  # master excluded on purpose: it is promote-only (image already built+validated
+  # on dev). So the pre-prod→master MR and the master push do NOT re-run
+  # maven_ci/sonar_scan — prod is gated by human review + the existing release artifact.
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ /^(dev|pre-prod)$/'
+      changes:
+        - pom.xml
+        - src/**/*
+    - if: '$CI_COMMIT_BRANCH == "dev" && $CI_PIPELINE_SOURCE == "push"'
+      changes:
+        - pom.xml
+        - src/**/*
+
+.dev_push_rules:
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "dev" && $CI_PIPELINE_SOURCE == "push"'
+      changes:
+        - pom.xml
+        - src/**/*
+        - Dockerfile
+        - docker-compose.yml
+
+.preprod_push_rules:
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "pre-prod" && $CI_PIPELINE_SOURCE == "push"'
+
+.master_push_rules:
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "master" && $CI_PIPELINE_SOURCE == "push"'
+
+.maven_cache:
+  cache:
+    - key: maven-cache-gen-bi
+      paths:
+        - .m2/repository
+  variables:
+    MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
+
+# Shared shell helpers for the pre-prod release jobs (image_retag_preprod +
+# prepare_next_release). Defined in before_script so the functions carry into
+# each job's script (same shell). Both run on alpine-based images, so `apk` works.
+.ci_helpers:
+  before_script:
+    - apk add --no-cache git bind-tools
+    - |
+      # The CI job container's IPv6 path to gitlab.com is intermittently unroutable,
+      # so git fetch/push fail at ~2s ("Could not connect to server"). docker→registry
+      # (via DinD) is unaffected. Pin gitlab.com to its IPv4 so git/curl never try the
+      # broken IPv6 path. Uses dig (bind-tools); falls back gracefully if unresolved.
+      GLIP=$(dig +short A "$CI_SERVER_HOST" | grep -E '^[0-9.]+$' | head -1)
+      if [ -n "$GLIP" ]; then
+        echo "$GLIP $CI_SERVER_HOST" >> /etc/hosts
+        echo "Pinned $CI_SERVER_HOST -> $GLIP (forcing IPv4)"
+      else
+        echo "WARN: no IPv4 resolved for $CI_SERVER_HOST; not pinning /etc/hosts"
+      fi
+    - |
+      # retry <max> <delay-s> <cmd...> — outer net for flaky network ops. Safe for
+      # the pushes here: re-pushing the same tag/commit is a no-op success.
+      retry() {
+        max=$1; delay=$2; shift 2
+        n=1
+        while true; do
+          "$@" && return 0
+          [ "$n" -ge "$max" ] && { echo "ERROR: '$*' failed after $max attempts."; return 1; }
+          echo "WARN: '$*' failed (attempt $n/$max), retrying in ${delay}s..."
+          n=$((n + 1)); sleep "$delay"
+        done
+      }
+      # git_net = single seam for git network calls. NOTE: http.connectTimeout does
+      # NOT affect the "could not connect" failure (that's a routing problem, fixed by
+      # the IPv4 pin above); kept only as a cheap guard against genuinely slow connects.
+      git_net() { git -c http.connectTimeout=30000 "$@"; }
+      # Project <version> — the one after <artifactId>gen-bi</artifactId>, NOT the
+      # spring-boot-starter-parent <version>. Reads pom.xml, or $1 if given.
+      pom_version() {
+        awk '
+          /<artifactId>gen-bi<\/artifactId>/ { found=1; next }
+          found && /<version>/ { gsub(/.*<version>|<\/version>.*/, ""); gsub(/[[:space:]]/, ""); print; exit }
+        ' "${1:-pom.xml}"
+      }
+      REMOTE="https://oauth2:${GIT_PUSH_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+      git config user.email "ci@gitlab"
+      git config user.name "GitLab CI"
+
+# ============================================================
+# STAGE: validate — maven build/test, Sonar scan, version guard
+# ============================================================
+
+maven_ci:
+  stage: validate
+  extends: [.maven_cache, .validate_rules]
+  tags: [docker-build]
+  image: maven:3.9-eclipse-temurin-21
+  services:
+    - name: docker:24-dind
+      command: ["--tls=false"]
+  variables:
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_HOST: tcp://docker:2375
+    # gen-bi tests use Testcontainers (MongoDB) — point them at the DinD service.
+    TESTCONTAINERS_HOST_OVERRIDE: docker
+  script:
+    - mvn clean install
+
+sonar_scan:
+  stage: validate
+  extends: [.validate_rules]
+  tags: [docker-build]
+  image: maven:3.9-eclipse-temurin-21
+  variables:
+    SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"
+    GIT_DEPTH: "0"
+    MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
+  cache:
+    - key: maven-cache-gen-bi
+      paths:
+        - .m2/repository
+    - key: "sonar-cache-$CI_COMMIT_REF_SLUG"
+      paths:
+        - "${SONAR_USER_HOME}/cache"
+  script:
+    - |
+      if [ "$CI_PIPELINE_SOURCE" = "merge_request_event" ]; then
+        mvn verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -DskipTests \
+          -Dsonar.pullrequest.key="$CI_MERGE_REQUEST_IID" \
+          -Dsonar.pullrequest.branch="$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME" \
+          -Dsonar.pullrequest.base="$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+      else
+        mvn verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -DskipTests \
+          -Dsonar.branch.name="$CI_COMMIT_REF_NAME"
+      fi
+  allow_failure: true   # POC mode
+
+# version_guard reads pom.xml on dev→pre-prod MR and enforces:
+#   1. format X.Y.Z-SNAPSHOT
+#   2. tag vX.Y.Z does not already exist
+#   3. version is not a regression compared to the latest released tag
+version_guard:
+  stage: validate
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "pre-prod"'
+  tags: [docker-build]
+  image: alpine:3
+  variables:
+    GIT_DEPTH: "0"
+  script:
+    - apk add --no-cache git
+    - |
+      # NOTE: pom.xml has TWO <version> tags. The first one (line 8) is the
+      # spring-boot-starter-parent version (e.g. 3.5.12). grep -m1 picks that up.
+      # We must instead pick the SECOND <version>, which is the project version.
+      # Use a more specific xmllint-free approach: grep within <project> top level.
+      # For simplicity, use sed to find <artifactId>gen-bi</artifactId> and the
+      # following <version>.
+      RAW=$(awk '
+        /<artifactId>gen-bi<\/artifactId>/ { found=1; next }
+        found && /<version>/ {
+          gsub(/.*<version>|<\/version>.*/, "")
+          gsub(/[[:space:]]/, "")
+          print
+          exit
+        }
+      ' pom.xml)
+      echo "Project version read from pom.xml: '$RAW'"
+
+      # === Validation 1: format must be X.Y.Z-SNAPSHOT ===
+      if ! echo "$RAW" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+-SNAPSHOT$'; then
+        echo ""
+        echo "ERROR: Invalid version format in pom.xml."
+        echo "  Found   : $RAW"
+        echo "  Expected: X.Y.Z-SNAPSHOT (e.g. 0.1.6-SNAPSHOT, 1.0.0-SNAPSHOT)"
+        echo ""
+        echo "pom.xml must contain a SNAPSHOT version before merging to pre-prod."
+        echo "CI strips the -SNAPSHOT suffix and uses the result as the release version."
+        exit 1
+      fi
+      VERSION=$(echo "$RAW" | sed 's/-SNAPSHOT//')
+      TAG="v${VERSION}"
+
+      # === Validation 2: tag must not already exist ===
+      git fetch --tags origin
+      if git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
+        echo ""
+        echo "ERROR: Version $VERSION has already been released (tag $TAG exists)."
+        echo ""
+        echo "This usually means 'dev' was not updated after the last pre-prod release."
+        echo ""
+        echo "Debug steps:"
+        echo "  1. Check what version pre-prod is currently on:"
+        echo "       git fetch origin"
+        echo "       git show origin/pre-prod:pom.xml | grep -A1 '<artifactId>gen-bi'"
+        echo "  2. Pull the bumped pom.xml from pre-prod into dev:"
+        echo "       git checkout dev"
+        echo "       git merge origin/pre-prod"
+        echo "  3. Verify pom.xml now shows a new SNAPSHOT version"
+        echo "  4. Continue development, then open a new MR dev → pre-prod when ready."
+        exit 1
+      fi
+
+      # === Validation 3: not a regression vs the latest released tag ===
+      LAST_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 | sed 's/^v//' || true)
+      LAST_TAG=${LAST_TAG:-0.0.0}
+      IS_REGRESSION=$(awk -v a="$VERSION" -v b="$LAST_TAG" 'BEGIN {
+        split(a, av, "."); split(b, bv, ".")
+        for (i = 1; i <= 3; i++) {
+          if (av[i]+0 < bv[i]+0) { print "yes"; exit }
+          if (av[i]+0 > bv[i]+0) { print "no";  exit }
+        }
+        print "no"
+      }')
+      if [ "$IS_REGRESSION" = "yes" ]; then
+        echo ""
+        echo "ERROR: Version regression detected."
+        echo "  Current release attempt : $VERSION"
+        echo "  Last released version   : $LAST_TAG"
+        echo ""
+        echo "Versions must always move forward."
+        echo ""
+        echo "Debug steps:"
+        echo "  1. Check the last released tag:"
+        echo "       git tag --sort=-version:refname | head -5"
+        echo "  2. Update pom.xml on dev to a version greater than $LAST_TAG"
+        echo "       e.g. <version>$(echo $LAST_TAG | awk -F. '{print $1"."$2"."$3+1}')-SNAPSHOT</version>"
+        echo "  3. Commit and push, then re-open the MR."
+        exit 1
+      fi
+
+      echo "version_guard passed: pom=$VERSION  next-tag=$TAG  (last released: ${LAST_TAG})"
+
+# Forbids squash merges into pre-prod. GitLab's squash setting is project-wide
+# (no per-target-branch policy), so we enforce it here on the pre-prod push.
+# A fast-forward (non-squash) merge leaves pre-prod's tip as a commit that already
+# exists on dev; a squash creates a brand-new commit that is NOT on dev, which
+# permanently diverges the branches and breaks the next fast-forward merge.
+# NOTE: this runs AFTER the merge — a loud alarm, not a lock. On failure, reset
+# pre-prod and re-merge with Squash OFF. Being in `validate`, a failure blocks the
+# later image_retag/prepare stages, so no tag/image is cut on top of a squash.
+guard_no_squash_preprod:
+  stage: validate
+  extends: [.ci_helpers, .preprod_push_rules]
+  tags: [docker-build]
+  image: alpine:3
+  variables:
+    GIT_DEPTH: "0"
+  script:
+    - |
+      DEV_BRANCH=$(echo "$CI_COMMIT_BRANCH" | sed 's|/pre-prod$|/dev|; s|^pre-prod$|dev|')
+      retry 3 15 git_net fetch origin "$DEV_BRANCH"
+      # Non-squash (FF): pre-prod tip already exists on dev → is-ancestor holds.
+      # Squash: pre-prod tip is a new commit absent from dev → is-ancestor fails.
+      if git merge-base --is-ancestor "$CI_COMMIT_SHA" "origin/$DEV_BRANCH"; then
+        echo "OK: pre-prod tip $CI_COMMIT_SHORT_SHA exists on $DEV_BRANCH — not squashed."
+      else
+        echo "ERROR: $CI_COMMIT_SHORT_SHA is not on $DEV_BRANCH — this is a SQUASH merge,"
+        echo "       which is forbidden for dev → pre-prod. Squash permanently diverges"
+        echo "       the branches and breaks the next fast-forward merge."
+        echo ""
+        echo "Recover:"
+        echo "  1. git checkout $CI_COMMIT_BRANCH && git reset --hard HEAD~1"
+        echo "  2. git push --force-with-lease origin $CI_COMMIT_BRANCH"
+        echo "  3. Re-merge the MR with 'Squash' OFF (fast-forward)."
+        exit 1
+      fi
+
+# ============================================================
+# STAGE: maven_build — dev push only
+# ============================================================
+
+maven_build_dev:
+  stage: maven_build
+  extends: [.maven_cache, .dev_push_rules]
+  tags: [docker-build]
+  image: maven:3.9-eclipse-temurin-21
+  script:
+    - mvn clean package -DskipTests
+  artifacts:
+    paths:
+      - target/gen-bi-*.jar
+    expire_in: 1 hour
+  needs:
+    - job: maven_ci
+      optional: true   # maven_ci skipped when changes filter doesn't match (e.g. CI-only edits)
+
+# ============================================================
+# STAGE: sentry_release
+# ============================================================
+
+sentry_release_dev:
+  stage: sentry_release
+  extends: [.dev_push_rules]
+  tags: [docker-build]
+  image: getsentry/sentry-cli:latest
+  variables:
+    GIT_DEPTH: "0"
+    SENTRY_RELEASE: "gen-bi@$CI_COMMIT_SHORT_SHA"
+  script:
+    - sentry-cli releases new "$SENTRY_RELEASE"
+    - sentry-cli releases set-commits "$SENTRY_RELEASE" --auto
+    - sentry-cli releases finalize "$SENTRY_RELEASE"
+  needs:
+    - job: maven_ci
+      optional: true
+
+# Triggered on master push (replacing tag-based sentry_release_prod).
+# Reads the latest vX.Y.Z tag and creates a Sentry release entry.
+sentry_release_prod:
+  stage: sentry_release
+  extends: [.master_push_rules]
+  tags: [docker-build]
+  image: getsentry/sentry-cli:latest
+  variables:
+    GIT_DEPTH: "0"
+  before_script:
+    - apk add --no-cache git
+  script:
+    - |
+      git fetch --tags origin
+      TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+      if [ -z "$TAG" ]; then
+        echo "ERROR: no release tag found (expected vX.Y.Z format)."
+        echo "       Has image_retag_preprod run successfully on a prior pre-prod merge?"
+        exit 1
+      fi
+      VERSION=$(echo "$TAG" | sed 's/^v//')
+      export SENTRY_RELEASE="gen-bi@${VERSION}"
+      sentry-cli releases new "$SENTRY_RELEASE"
+      sentry-cli releases set-commits "$SENTRY_RELEASE" --auto
+      sentry-cli releases finalize "$SENTRY_RELEASE"
+
+# ============================================================
+# STAGE: docker_build — dev push only
+# Pushes both :dev (mutable) and :dev-<short-sha>-<version> (immutable, retag source).
+# ============================================================
+
+docker_build_dev:
+  stage: docker_build
+  extends: [.dev_push_rules]
+  tags: [docker-build]
+  image: docker:24
+  services:
+    - name: docker:24-dind
+      command: ["--tls=false"]
+  variables:
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_HOST: tcp://docker:2375
+  script:
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+    - docker pull "$CI_REGISTRY_IMAGE/gen-bi:dev" || true
+    - |
+      docker build \
+        --cache-from "$CI_REGISTRY_IMAGE/gen-bi:dev" \
+        --build-arg CACHE_BUSTER="$(date +%s)" \
+        --build-arg SENTRY_RELEASE="gen-bi@$CI_COMMIT_SHORT_SHA" \
+        -t "$CI_REGISTRY_IMAGE/gen-bi:dev" .
+    - docker push "$CI_REGISTRY_IMAGE/gen-bi:dev"
+    # Also push an immutable tag :dev-<short-sha>-<pom-version>
+    # (e.g. dev-abc12345-9.0.2-SNAPSHOT). image_retag_preprod uses it as the retag
+    # source; the version makes the intended release visible at a glance in the
+    # registry. CONTRACT: image_retag_preprod rebuilds this exact string from the
+    # dev HEAD sha + pre-prod pom.xml — both sides must format it identically:
+    #   sha     = $CI_COMMIT_SHORT_SHA (first 8 chars of the commit)
+    #   version = raw pom <version>, SNAPSHOT kept
+    - |
+      POM_VERSION=$(awk '/<artifactId>gen-bi<\/artifactId>/{f=1;next} f&&/<version>/{gsub(/.*<version>|<\/version>.*/,"");gsub(/[[:space:]]/,"");print;exit}' pom.xml)
+      IMMUTABLE="$CI_REGISTRY_IMAGE/gen-bi:dev-$CI_COMMIT_SHORT_SHA-$POM_VERSION"
+      docker tag  "$CI_REGISTRY_IMAGE/gen-bi:dev" "$IMMUTABLE"
+      docker push "$IMMUTABLE"
+      echo "Pushed immutable dev image: $IMMUTABLE"
+  needs:
+    - job: maven_build_dev
+      artifacts: true
+    - job: sentry_release_dev
+
+# ============================================================
+# STAGE: image_retag — pre-prod push only
+# ============================================================
+# Promotes the dev image to a release:
+#   1. Reads pom.xml version (X.Y.Z-SNAPSHOT) → release tag vX.Y.Z
+#   2. Retags :dev-<sha>-<version> → :vX.Y.Z (no rebuild)
+#   3. Creates and pushes git tag vX.Y.Z
+# The PATCH bump is split into prepare_next_release so the git-only bump runs
+# on a lightweight image without DinD.
+#
+# Properties:
+# - interruptible: false — mid-job cancel leaves tag/image half-done
+# - Idempotent: tag exists → skip retag/tag (safe to re-run)
+# - Short retry on :dev-<sha>-<version>, then falls back to :dev (dev pipeline race)
+image_retag_preprod:
+  stage: image_retag
+  extends: [.ci_helpers, .preprod_push_rules]
+  tags: [docker-build]
+  interruptible: false
+  image: docker:24
+  services:
+    - name: docker:24-dind
+      command: ["--tls=false"]
+  variables:
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_HOST: tcp://docker:2375
+    GIT_DEPTH: "0"
+  script:
+    - |
+      # ---- 1. resolve release version from pom.xml -----------------------------
+      RAW=$(pom_version)
+      if ! echo "$RAW" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+-SNAPSHOT$'; then
+        echo "ERROR: pom.xml version '$RAW' is not X.Y.Z-SNAPSHOT (version_guard should have caught this)."
+        exit 1
+      fi
+      VERSION="${RAW%-SNAPSHOT}"
+      TAG="v${VERSION}"
+      echo "Target release: pom=$VERSION  tag/image=$TAG"
+
+      # ---- 2. retag :dev-<sha>-<version> → :TAG and create git tag (skip if exists) --
+      retry 3 15 git_net fetch --tags origin
+      if git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
+        echo "INFO: tag $TAG already exists — skipping retag (idempotent re-run)."
+      else
+        docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+
+        # pre-prod's commit is a new SHA (merge/squash), so resolve dev HEAD to find
+        # the immutable :dev-<sha>-<version> that dev's docker_build_dev pushed.
+        DEV_BRANCH=$(echo "$CI_COMMIT_BRANCH" | sed 's|/pre-prod$|/dev|; s|^pre-prod$|dev|')
+        retry 3 15 git_net fetch origin "$DEV_BRANCH"
+        # cut -c1-8 == GitLab's CI_COMMIT_SHORT_SHA (first 8 chars), which is what
+        # docker_build_dev tagged with. `git rev-parse --short` (auto length, ~7)
+        # could disagree and miss the image.
+        DEV_SHA=$(git rev-parse "origin/$DEV_BRANCH" | cut -c1-8)
+        # CONTRACT with docker_build_dev: dev-<sha>-<pom-version>, SNAPSHOT kept.
+        # $RAW is that same SNAPSHOT version (a FF merge brings dev's pom verbatim).
+        SRC="$CI_REGISTRY_IMAGE/gen-bi:dev-$DEV_SHA-$RAW"
+
+        # docker_build_dev pushes :dev then :dev-<sha>-<version>, so a miss is almost
+        # always that brief push gap — a short retry covers it. If it still never
+        # appears, fall back to :dev (the same image during that gap).
+        if ! retry 2 10 docker pull "$SRC"; then
+          echo "WARN: $SRC unavailable — falling back to :dev."
+          docker pull "$CI_REGISTRY_IMAGE/gen-bi:dev" \
+            || { echo "ERROR: neither $SRC nor :dev found — did dev's pipeline build the image?"; exit 1; }
+          SRC="$CI_REGISTRY_IMAGE/gen-bi:dev"
+        fi
+
+        docker tag  "$SRC" "$CI_REGISTRY_IMAGE/gen-bi:$TAG"
+        docker push "$CI_REGISTRY_IMAGE/gen-bi:$TAG"
+        echo "Retagged $SRC → :$TAG"
+
+        # v prefix matches the existing Protected Tag v* rule.
+        git tag "$TAG"
+        retry 3 15 git_net push "$REMOTE" "$TAG"
+        echo "Created git tag $TAG"
+      fi
+
+# ============================================================
+# STAGE: prepare_release — pre-prod push only
+# ============================================================
+# Bumps pom.xml PATCH+1 → X.Y.(Z+1)-SNAPSHOT and commits it back to pre-prod so
+# dev continues from the next SNAPSHOT. Git-only → runs on a light alpine image
+# (no DinD), keeping the flaky gitlab.com push off the docker/DinD job.
+#
+# Properties:
+# - interruptible: false — mid-job cancel could leave the commit half-pushed
+# - Idempotent: this job's checkout is the PRE-bump commit, so the local pom still
+#   shows the released version even after success. Decide off the REMOTE tip instead.
+# - Loop prevention uses `git push -o ci.skip` (NOT a [skip ci] commit message):
+#   ci.skip skips only THIS push's pipeline, leaving the commit clean so that when
+#   it later FF-merges to master the master push pipeline (deploy) still runs.
+prepare_next_release:
+  stage: prepare_release
+  extends: [.ci_helpers, .preprod_push_rules]
+  tags: [docker-build]
+  interruptible: false
+  image: alpine:3
+  variables:
+    GIT_DEPTH: "0"
+  needs:
+    - job: image_retag_preprod
+  script:
+    - |
+      RAW=$(pom_version)
+      if ! echo "$RAW" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+-SNAPSHOT$'; then
+        echo "ERROR: pom.xml version '$RAW' is not X.Y.Z-SNAPSHOT."
+        exit 1
+      fi
+      VERSION="${RAW%-SNAPSHOT}"
+      NEXT="$(echo "$VERSION" | awk -F. '{print $1"."$2"."$3+1}')-SNAPSHOT"
+
+      # Idempotency: compare against the REMOTE branch tip, not the local checkout
+      # (which is the pre-bump commit and always shows RAW). A re-run after success
+      # finds the remote already at NEXT and cleanly no-ops.
+      retry 3 15 git_net fetch origin "$CI_COMMIT_BRANCH"
+      remote_pom=$(mktemp)
+      git show "FETCH_HEAD:pom.xml" > "$remote_pom"
+      REMOTE_VERSION=$(pom_version "$remote_pom")
+      rm -f "$remote_pom"
+      if [ "$REMOTE_VERSION" = "$NEXT" ]; then
+        echo "INFO: $CI_COMMIT_BRANCH already at $NEXT — bump already done, skipping."
+        exit 0
+      fi
+      if [ "$REMOTE_VERSION" != "$RAW" ]; then
+        echo "WARN: $CI_COMMIT_BRANCH pom is '$REMOTE_VERSION' (expected '$RAW' or '$NEXT')."
+        echo "      Not bumping, to avoid pushing over an unexpected state."
+        exit 0
+      fi
+
+      # Replace the <version> after <artifactId>gen-bi</artifactId>, not the parent's.
+      sed -i "/<artifactId>gen-bi<\/artifactId>/,/<version>/{s|<version>${RAW}</version>|<version>${NEXT}</version>|}" pom.xml
+      git add pom.xml
+      git commit -m "${VERSION} is ready to release (bump pom.xml version to ${NEXT})"
+      # push -o ci.skip prevents this bump push from triggering another pre-prod
+      # pipeline (loop prevention) WITHOUT putting [skip ci] in the commit — so the
+      # commit stays clean and the master push pipeline still runs after FF merge.
+      retry 3 15 git_net push -o ci.skip "$REMOTE" HEAD:$CI_COMMIT_BRANCH
+      echo "Bumped pom.xml to $NEXT and pushed to $CI_COMMIT_BRANCH."
+
+# ============================================================
+# STAGE: deploy
+# ============================================================
+
+deploy_dev:
+  stage: deploy
+  extends: [.dev_push_rules]
+  tags: [lndata-1]
+  interruptible: false
+  resource_group: dev_deploy
+  variables:
+    GIT_CLEAN_FLAGS: none
+    AWS_REGION: "us-west-2"
+    BEDROCK_MODEL_ID: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+    BEDROCK_EMBEDDING_MODEL: "amazon.titan-embed-text-v2:0"
+    IMAGE_TAG: "dev"
+    SENTRY_ENVIRONMENT: "dev"
+  before_script:
+    - |
+      port_line=$(sudo ss -tlnp | grep ':8090' || true)
+      if [ -n "$port_line" ]; then
+        if echo "$port_line" | grep -q "docker-proxy"; then
+          holder=$(sudo docker ps --format '{{.Names}}' | grep '^gen-bi$' || true)
+          if [ -z "$holder" ]; then
+            echo "ERROR: port 8090 is held by an unrelated container. Aborting."
+            exit 1
+          fi
+          echo "INFO: port 8090 held by gen-bi — will be recreated."
+        else
+          echo "ERROR: port 8090 is held by a non-Docker process. Aborting."
+          exit 1
+        fi
+      fi
+  script:
+    - sudo docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+    - sudo docker pull "$CI_REGISTRY_IMAGE/gen-bi:$IMAGE_TAG"
+    - sudo docker logout "$CI_REGISTRY"
+    - sudo docker network inspect internalnet >/dev/null 2>&1 || sudo docker network create internalnet
+    - |
+      env_file=$(mktemp)
+      echo "GENBI_IMAGE=$CI_REGISTRY_IMAGE/gen-bi:$IMAGE_TAG" >> "$env_file"
+      echo "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID" >> "$env_file"
+      echo "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY" >> "$env_file"
+      echo "AWS_REGION=$AWS_REGION" >> "$env_file"
+      echo "BEDROCK_MODEL_ID=$BEDROCK_MODEL_ID" >> "$env_file"
+      echo "BEDROCK_EMBEDDING_MODEL=$BEDROCK_EMBEDDING_MODEL" >> "$env_file"
+      echo "SENTRY_DSN=$SENTRY_DSN" >> "$env_file"
+      echo "SENTRY_ENVIRONMENT=$SENTRY_ENVIRONMENT" >> "$env_file"
+      echo "SENTRY_RELEASE=gen-bi@$CI_COMMIT_SHORT_SHA" >> "$env_file"
+      echo "APP_VERSION=$CI_COMMIT_SHORT_SHA" >> "$env_file"
+      sudo docker compose -f docker-compose.yml --env-file "$env_file" up -d --force-recreate
+      rm -f "$env_file"
+    - sudo docker image rm local/gen-bi:offline-v1 2>/dev/null || true
+    - sudo docker image prune -f
+  needs:
+    - job: docker_build_dev
+
+# Manual production deploy triggered on master push.
+# IMAGE_TAG defaults to the latest vX.Y.Z git tag; override via Run job dialog for rollback.
+deploy_production:
+  stage: deploy
+  extends: [.master_push_rules]
+  tags: [lndata-oci-prod]
+  when: manual
+  interruptible: false
+  resource_group: production_deploy
+  variables:
+    GIT_CLEAN_FLAGS: none
+    GIT_DEPTH: "0"
+    AWS_REGION: "us-west-2"
+    BEDROCK_MODEL_ID: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+    BEDROCK_EMBEDDING_MODEL: "amazon.titan-embed-text-v2:0"
+    SENTRY_ENVIRONMENT: "production"
+    # IMAGE_TAG NOT declared here — defaults to derivation from latest git tag.
+    # Override via Run job dialog (e.g. IMAGE_TAG=v0.1.4) for rollback.
+  before_script:
+    - |
+      port_line=$(sudo ss -tlnp | grep ':8090' || true)
+      if [ -n "$port_line" ]; then
+        if echo "$port_line" | grep -q "docker-proxy"; then
+          holder=$(sudo docker ps --format '{{.Names}}' | grep '^gen-bi$' || true)
+          if [ -z "$holder" ]; then
+            echo "ERROR: port 8090 is held by an unrelated container. Aborting."
+            exit 1
+          fi
+        else
+          echo "ERROR: port 8090 is held by a non-Docker process. Aborting."
+          exit 1
+        fi
+      fi
+  script:
+    - |
+      if [ -z "$IMAGE_TAG" ]; then
+        git fetch --tags origin
+        IMAGE_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+        if [ -z "$IMAGE_TAG" ]; then
+          echo "ERROR: no release tag found in repo (expected vX.Y.Z format)."
+          echo "       Has image_retag_preprod run successfully?"
+          exit 1
+        fi
+        echo "INFO: IMAGE_TAG derived from latest tag: $IMAGE_TAG"
+      else
+        echo "INFO: IMAGE_TAG override: $IMAGE_TAG"
+      fi
+
+      if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
+        echo "ERROR: AWS_ACCESS_KEY_ID or AWS_SECRET_ACCESS_KEY is empty."
+        echo "       Check GitLab CI/CD variables — variable scope and Protected setting must match this branch."
+        exit 1
+      fi
+
+      VERSION=$(echo "$IMAGE_TAG" | sed 's/^v//')
+
+      sudo docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+      if ! sudo docker pull "$CI_REGISTRY_IMAGE/gen-bi:$IMAGE_TAG"; then
+        echo "ERROR: image tag $IMAGE_TAG not found in registry."
+        exit 1
+      fi
+      sudo docker logout "$CI_REGISTRY"
+      sudo docker network inspect internalnet >/dev/null 2>&1 || sudo docker network create internalnet
+
+      env_file=$(mktemp)
+      echo "GENBI_IMAGE=$CI_REGISTRY_IMAGE/gen-bi:$IMAGE_TAG" >> "$env_file"
+      echo "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID" >> "$env_file"
+      echo "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY" >> "$env_file"
+      echo "AWS_REGION=$AWS_REGION" >> "$env_file"
+      echo "BEDROCK_MODEL_ID=$BEDROCK_MODEL_ID" >> "$env_file"
+      echo "BEDROCK_EMBEDDING_MODEL=$BEDROCK_EMBEDDING_MODEL" >> "$env_file"
+      echo "SENTRY_DSN=$SENTRY_DSN" >> "$env_file"
+      echo "SENTRY_ENVIRONMENT=$SENTRY_ENVIRONMENT" >> "$env_file"
+      echo "SENTRY_RELEASE=gen-bi@${VERSION}" >> "$env_file"
+      echo "APP_VERSION=${VERSION}" >> "$env_file"
+      sudo docker compose -f docker-compose.yml --env-file "$env_file" up -d --force-recreate
+      rm -f "$env_file"
+
+      sudo docker image rm local/gen-bi:offline-v1 2>/dev/null || true
+      sudo docker image prune -f
+      
+      # ---- Mark the prod release + deploy in Sentry, in THIS same job ----------
+      # rollback = re-run this manual job with an IMAGE_TAG override → re-marks in
+      # the same click (re-running a finished pipeline's job won't cascade to a
+      # downstream job, which is why rollback used to need two manual jobs).
+      # `releases new` is idempotent: forward = no-op (already created by
+      # sentry_release_prod); rollback to a never-released version = creates it so
+      # the deploy event attaches (fixes the old "Release not found").
+      # No set-commits: rollback targets an old version; HEAD commits don't match.
+      SENTRY_RELEASE="gen-bi@${VERSION}"
+      sentry_cli() {
+        # values expanded in-shell: sudo sanitizes env, so bare `-e NAME` won't pass them
+        sudo docker run --rm \
+          -e SENTRY_AUTH_TOKEN="$SENTRY_AUTH_TOKEN" \
+          -e SENTRY_ORG="$SENTRY_ORG" \
+          -e SENTRY_PROJECT="$SENTRY_PROJECT" \
+          ${SENTRY_URL:+-e SENTRY_URL="$SENTRY_URL"} \
+          getsentry/sentry-cli:latest "$@"
+      }
+      sentry_cli releases new "$SENTRY_RELEASE"
+      sentry_cli releases finalize "$SENTRY_RELEASE"
+      sentry_cli releases deploys "$SENTRY_RELEASE" new -e production
+      echo "Sentry: marked production deploy for $SENTRY_RELEASE"
+
+  artifacts:
+    paths:
+      - deployed-image-tag.txt
+    expire_in: 1 week
+  needs:
+    - job: sentry_release_prod
+
+# ============================================================
+# STAGE: sentry_mark (dev)
+# NOTE: production sentry mark is within the deploy_production script
+# ============================================================
+
+sentry_mark_dev:
+  stage: sentry_mark
+  extends: [.dev_push_rules]
+  tags: [docker-build]
+  image: getsentry/sentry-cli:latest
+  script:
+    - sentry-cli releases deploys "gen-bi@$CI_COMMIT_SHORT_SHA" new -e dev
+  needs:
+    - job: deploy_dev
+
+  

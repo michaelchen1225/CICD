@@ -22,6 +22,8 @@
 
 * [補充：如何 commit 時跳過 CI/CD ?](./GitLab%20CICD/Gitlab-cicd-note-github/06-how-to-skip.md)
 
+* [補充：Pipeline 設計原理（實戰範例拆解）](./GitLab%20CICD/cicd-tips/pipeline-design-principles.md)
+
 * [補充：SonarQube (1) --- 介紹與建置](./SonarQube/01-sonarqube.md)
 
 * [補充：SonarQube (2) --- 整合 GitLab CI/CD (Java)](./SonarQube/02-gitlab-ci-integration.md)

@@ -111,13 +111,13 @@ image_build:
 
 1. 下游 pipeline 會被上游 pipeline 的 Job Token 觸發，前提是要「允許」上游 pipeline 觸發下游 pipeline：前往「**Settings**」>「**CI/CD**」>「**Job token permissions**」，把上游 pipeline 的 repo 加入白名單：
 
-    ![alt text](image-15.png)
+    ![alt text](images/image-15.png)
 
 2. 下游 pipeline 會繼承上游的變數，因此得確保上游 pipeline **有權限** 去設定下游 pipeline 的變數。
 
     > 以範例來說，`k8s-repo` 為下游，因此需要將「**Settings**」>「**CI/CD**」>「**Variables**」>「**Minimum role to use pipeline variables**」，改成「**Developer**」。
 
-    ![alt text](image-16.png)
+    ![alt text](images/image-16.png)
 
 3. 需要一個 shell executor
 
@@ -202,8 +202,8 @@ change_tag:
 
 **結果**：
 
-![alt text](image-17.png)
+![alt text](images/image-17.png)
 
 
 
-![alt text](image-18.png)
+![alt text](images/image-18.png)

@@ -28,7 +28,7 @@ The repository has two layers of tables of contents and a sandbox:
 - **Language:** all prose is Traditional Chinese (zh-TW). New content should match.
 - **Chapter numbering:** new chapters in `Gitlab-cicd-note-github/` follow the `NN-short-slug.md` pattern (e.g. `04-regist-runner.md`). Pick the next free number; do not renumber existing files since the root README links to them by name.
 - **Per-chapter TOCs:** longer chapters (e.g. `02.md`, `04-regist-runner.md`, `05-use-case.md`) include their own in-page TOC using GitHub-style anchor links (`[標題](#中文-anchor)`). When editing those chapters, keep the in-page TOC in sync with the headings.
-- **Images:** stored next to the markdown that references them, using sequential names (`image.png`, `image-1.png`, …). Add new screenshots with the next free number rather than renaming.
+- **Images:** screenshots for the `Gitlab-cicd-note-github/` chapters live in the `Gitlab-cicd-note-github/images/` subfolder and are referenced with the `images/` prefix — `![alt](images/image-3.png)` in Markdown, or `<img src="images/image-14.png" width="...">` when a chapter needs a sized image. Use sequential names (`image.png`, `image-1.png`, …) and add new screenshots with the next free number rather than renaming. (Other folders such as `SonarQube/` may still keep their images beside the `.md`; match whatever the folder you are editing already does.)
 - **Cross-chapter links from the root README** must URL-encode the space in `GitLab CICD` as `GitLab%20CICD/...`. In-folder relative links (within `Gitlab-cicd-note-github/`) do not need encoding.
 
 ## Mandatory rule — keep the root README TOC current
@@ -42,15 +42,22 @@ This applies to **any** documentation `.md` anywhere under the repo, including:
 - Tip / reference notes inside `GitLab CICD/cicd-tips/`.
 - Any chapter inside `SonarQube/`.
 - Any new note folder created later under the repo.
-- Any rename, deletion, or reorder of the above (keep the displayed order coherent: concept first, GitLab content grouped together, then the SonarQube series).
+- Any rename, deletion, or reorder of the above (keep every note under the `###` section that matches its folder — see the TOC structure below).
 
 Do **not** add TOC entries for (these are not reader-facing notes): per-folder `README.md` stubs, any `CLAUDE.md`, `image-*.png` files, the `.gitlab-ci.yml` example/sandbox files (`cicd-tips/.gitlab-ci.yml` and everything under `cicd-test/`), anything under `.claude/`, or files inside the nested `cicd-test/.git`.
+
+The `## 目錄` is **categorised into `###` sections that mirror the repo's folders** — do NOT flatten it back into one undifferentiated list. The current sections, in order, are:
+
+1. **入門概念** — the root concept chapter (`01.md`).
+2. **GitLab CI/CD 筆記** — everything in `Gitlab-cicd-note-github/`: 第一~五章 first (numeric order, the meaningful reading sequence), then the `補充：` / `案例：` entries (skip-CI, cache, sonarqube draft, the incident note).
+3. **CI/CD 設計技巧（cicd-tips）** — notes in `cicd-tips/`.
+4. **SonarQube** — the `SonarQube/` series, `(1)`…`(7)` then `maintainability-considerations.md`.
 
 When updating the TOC:
 
 1. Open the root `README.md` and locate the `## 目錄` block.
-2. Insert/remove/rename the bullet so the displayed order matches the chapter order (root concept chapters first, then GitLab chapters in numeric order, then any 補充 / appendix entries last — mirroring the existing pattern).
-3. Use the same bullet style already in the file (`* [標題](path)` with a blank line between entries) and write the link text in Traditional Chinese.
+2. Put the new entry under the `###` section matching its source folder, in reading order (核心章節 by number, then 補充/案例). If a brand-new note folder is created, add a new `###` section for it in the natural reading position rather than dropping the entry into an unrelated section.
+3. Within a section use the bullet style already in the file (`* [標題](path)` with a blank line between entries), link text in Traditional Chinese. Don't repeat the section name in every bullet (under **SonarQube** write `(1) 介紹與建置`, not `補充：SonarQube (1) ...`).
 4. URL-encode spaces in paths that traverse `GitLab CICD/` (`GitLab%20CICD/...`).
 5. Verify each link resolves to an existing file before finishing.
 

@@ -153,7 +153,7 @@ git push
 
 * 前往 Gitlab 確認 CI/CD 的 Job 是否有跑成功：
 
-<img src="image-14.png" width="300px">
+<img src="images/image-14.png" width="300px">
 
 * 在 server 上查看 /tmp/ 下是否有 hello.txt 檔案：
 

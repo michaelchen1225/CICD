@@ -18,8 +18,10 @@ The repository has two layers of tables of contents and a sandbox:
 - **`01.md`** — the conceptual introduction (what CI/CD is, CI vs CD, common tooling). It sits at the root because it is the prerequisite reading before any GitLab-specific chapter.
 - **`GitLab CICD/`** — the GitLab-specific section.
   - `README.md` here is a near-empty stub. The *real* TOC for users is the root `README.md`; do not duplicate chapter listings into this stub.
-  - `Gitlab-cicd-note-github/` — the numbered chapter sequence (`01.md` … `06-how-to-skip.md`) plus all `image-*.png` screenshots referenced from those chapters. Chapters are ordered by the numeric prefix and the order is meaningful (later chapters assume earlier ones).
+  - `Gitlab-cicd-note-github/` — the numbered chapter sequence (`01.md`, `02.md`, … `08-cache.md`), plus occasional non-numbered case-study / incident notes (e.g. `connector-dockerfile-instantclient-upgrade-incident.md`), plus all `image-*.png` screenshots referenced from those chapters. Numbered chapters are ordered by their prefix and the order is meaningful (later chapters assume earlier ones).
+  - `cicd-tips/` — tips / reference notes (e.g. `pipeline-design-principles.md`) accompanied by a real-world `.gitlab-ci.yml` used as the worked example. The `.md` notes here **are** documentation and belong in the root TOC; the `.gitlab-ci.yml` is only the example artifact (not a TOC entry, and — unlike `cicd-test/` — it is part of this repo, with no nested `.git`).
   - `cicd-test/` — a **nested independent git repository** containing a sample `.gitlab-ci.yml`. It is a sandbox for testing pipeline syntax, not part of the notes themselves. Do not treat its contents as documentation, and do not commit it from the outer repo (it has its own `.git`).
+- **`SonarQube/`** — a parallel chapter series on SonarQube integration (`01-sonarqube.md` … `07-token-management.md`, plus `maintainability-considerations.md`). It has its own [`SonarQube/CLAUDE.md`](SonarQube/CLAUDE.md) carrying writing-style rules specific to that series — read it before editing anything under `SonarQube/`. All its chapters are listed in the root `README.md` TOC.
 
 ## Authoring conventions worth preserving
 
@@ -31,15 +33,18 @@ The repository has two layers of tables of contents and a sandbox:
 
 ## Mandatory rule — keep the root README TOC current
 
-**Whenever a chapter file is added, removed, or renamed under this repository, you must update the `## 目錄` section of the root [`README.md`](README.md) in the same change so it reflects the new state.**
+**Whenever a note `.md` file (chapter, 補充, tip, case study — anything a reader follows) is added, removed, renamed, or reordered *anywhere* in this repository, you must update the `## 目錄` section of the root [`README.md`](README.md) in the same change so it reflects the new state.** Treat "I created / deleted / renamed a note file" and "I touched the root TOC" as one inseparable action — never finish the former without the latter.
 
-Apply this rule to:
+This applies to **any** documentation `.md` anywhere under the repo, including:
 
-- Any new `*.md` chapter at the repository root (e.g. another conceptual chapter alongside `01.md`).
-- Any new `NN-*.md` chapter inside `GitLab CICD/Gitlab-cicd-note-github/`.
-- Any rename, deletion, or reorder of the above.
+- Root-level concept chapters (e.g. another one alongside `01.md`).
+- Numbered chapters **and** non-numbered case-study / incident notes inside `GitLab CICD/Gitlab-cicd-note-github/` (e.g. `08-cache.md`, `connector-dockerfile-instantclient-upgrade-incident.md`).
+- Tip / reference notes inside `GitLab CICD/cicd-tips/`.
+- Any chapter inside `SonarQube/`.
+- Any new note folder created later under the repo.
+- Any rename, deletion, or reorder of the above (keep the displayed order coherent: concept first, GitLab content grouped together, then the SonarQube series).
 
-Do **not** add entries for: per-folder `README.md` stubs, `image-*.png` files, the `cicd-test/` sandbox, or files inside the nested `cicd-test/.git`.
+Do **not** add TOC entries for (these are not reader-facing notes): per-folder `README.md` stubs, any `CLAUDE.md`, `image-*.png` files, the `.gitlab-ci.yml` example/sandbox files (`cicd-tips/.gitlab-ci.yml` and everything under `cicd-test/`), anything under `.claude/`, or files inside the nested `cicd-test/.git`.
 
 When updating the TOC:
 

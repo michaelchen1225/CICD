@@ -22,7 +22,13 @@
 
 * [補充：如何 commit 時跳過 CI/CD ?](./GitLab%20CICD/Gitlab-cicd-note-github/06-how-to-skip.md)
 
+* [補充：Cache（快取）設定與管理](./GitLab%20CICD/Gitlab-cicd-note-github/08-cache.md)
+
 * [補充：Pipeline 設計原理（實戰範例拆解）](./GitLab%20CICD/cicd-tips/pipeline-design-principles.md)
+
+* [補充：Oracle Instant Client 升級事故總結](./GitLab%20CICD/Gitlab-cicd-note-github/connector-dockerfile-instantclient-upgrade-incident.md)
+
+* [補充：SonarQube --- 整合 GitLab CI/CD (草稿)](./GitLab%20CICD/Gitlab-cicd-note-github/07-sonarqube.md)
 
 * [補充：SonarQube (1) --- 介紹與建置](./SonarQube/01-sonarqube.md)
 
@@ -39,7 +45,5 @@
 * [補充：SonarQube (7) --- Token 管理](./SonarQube/07-token-management.md)
 
 * [補充：SonarQube --- Maintainability 的長期考量](./SonarQube/maintainability-considerations.md)
-
-* [補充：SonarQube --- 整合 GitLab CI/CD (草稿)](./GitLab%20CICD/Gitlab-cicd-note-github/07-sonarqube.md)
 
 ## 待處理

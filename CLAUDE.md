@@ -20,7 +20,10 @@ The repository has two layers of tables of contents and a sandbox:
   - `README.md` here is a near-empty stub. The *real* TOC for users is the root `README.md`; do not duplicate chapter listings into this stub.
   - `Gitlab-cicd-note-github/` — the numbered chapter sequence (`01.md`, `02.md`, … `08-cache.md`), with the screenshots they reference collected in the `images/` subfolder (referenced as `images/image-N.png`). Numbered chapters are ordered by their prefix and the order is meaningful (later chapters assume earlier ones). This folder also keeps its own `README.md` index table — update it too when chapters change here.
   - `cases/` — standalone real-world case studies / incident postmortems (e.g. `connector-dockerfile-instantclient-upgrade-incident.md`), deliberately kept out of the numbered chapter sequence. These **are** documentation and belong in the root TOC (under the 案例 / 事故 section).
-  - `cicd-tips/` — tips / reference notes (e.g. `pipeline-design-principles.md`) accompanied by a real-world `.gitlab-ci.yml` used as the worked example. The `.md` notes here **are** documentation and belong in the root TOC; the `.gitlab-ci.yml` is only the example artifact (not a TOC entry, and — unlike `cicd-test/` — it is part of this repo, with no nested `.git`).
+  - `cicd-tips/` — tips / reference notes (e.g. `pipeline-design-principles.md`) accompanied by a real-world `.gitlab-ci.yml` used as the worked example, plus two doc subfolders:
+    - `ci-docs/` — the pipeline design spec the YAML header points to (`pipeline.md` EN + `pipeline.zh-TW.md`).
+    - `gen-bi-handbooks/` — role-based operational handbooks (`cheat-sheet` / `developer-handbook` / `release-manager-handbook` / `devops-note`); English at the folder root, Traditional Chinese under `zh-TW/`.
+    All these `.md` **are** documentation and belong in the root TOC; the `.gitlab-ci.yml` is only the example artifact (not a TOC entry, and — unlike `cicd-test/` — it is part of this repo, with no nested `.git`).
   - `cicd-test/` — a **nested independent git repository** containing a sample `.gitlab-ci.yml`. It is a sandbox for testing pipeline syntax, not part of the notes themselves. Do not treat its contents as documentation, and do not commit it from the outer repo (it has its own `.git`).
 - **`SonarQube/`** — a parallel chapter series on SonarQube integration (`01-sonarqube.md` … `07-token-management.md`, plus `maintainability-considerations.md`). It has its own [`SonarQube/CLAUDE.md`](SonarQube/CLAUDE.md) carrying writing-style rules specific to that series — read it before editing anything under `SonarQube/`. All its chapters are listed in the root `README.md` TOC.
 
@@ -40,7 +43,7 @@ This applies to **any** documentation `.md` anywhere under the repo, including:
 
 - Root-level concept chapters (e.g. another one alongside `01.md`).
 - Numbered chapters inside `GitLab CICD/Gitlab-cicd-note-github/` (e.g. `08-cache.md`).
-- Tip / reference notes inside `GitLab CICD/cicd-tips/`.
+- Tip / reference notes, the pipeline design spec, and role-based handbooks inside `GitLab CICD/cicd-tips/` — including its `ci-docs/` and `gen-bi-handbooks/` subfolders. For bilingual docs, list the zh-TW version as the primary link with a `· [EN]` link after it.
 - Case-study / incident notes inside `GitLab CICD/cases/` (e.g. `connector-dockerfile-instantclient-upgrade-incident.md`).
 - Any chapter inside `SonarQube/`.
 - Any new note folder created later under the repo.
@@ -52,9 +55,10 @@ The `## 目錄` is **categorised into `###` sections that mirror the repo's fold
 
 1. **入門概念** — the root concept chapter (`01.md`).
 2. **GitLab CI/CD 筆記** — everything in `Gitlab-cicd-note-github/`: 第一~五章 first (numeric order, the meaningful reading sequence), then the `補充：` entries (skip-CI, cache, sonarqube draft).
-3. **CI/CD 設計技巧（cicd-tips）** — notes in `cicd-tips/`.
-4. **案例 / 事故（cases）** — real-world case studies / incident postmortems in `cases/`.
-5. **SonarQube** — the `SonarQube/` series, `(1)`…`(7)` then `maintainability-considerations.md`.
+3. **CI/CD 設計技巧（cicd-tips）** — `pipeline-design-principles.md` plus the `ci-docs/` pipeline design spec (zh-TW primary, `· [EN]` secondary).
+4. **gen-bi 實戰手冊（handbooks）** — the role-based handbooks in `cicd-tips/gen-bi-handbooks/` (cheat-sheet / developer / release-manager / devops; zh-TW under `zh-TW/`, EN at the folder root).
+5. **案例 / 事故（cases）** — real-world case studies / incident postmortems in `cases/`.
+6. **SonarQube** — the `SonarQube/` series, `(1)`…`(7)` then `maintainability-considerations.md`.
 
 When updating the TOC:
 

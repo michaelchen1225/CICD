@@ -8,7 +8,7 @@
 
 ## 目錄
 
-> 依資料夾分五類:**入門概念** → **GitLab CI/CD 筆記** → **CI/CD 設計技巧** → **案例 / 事故** → **SonarQube**。
+> 依資料夾分六類:**入門概念** → **GitLab CI/CD 筆記** → **CI/CD 設計技巧** → **gen-bi 實戰手冊** → **案例 / 事故** → **SonarQube**。
 
 ### 入門概念
 
@@ -36,9 +36,23 @@
 
 ### CI/CD 設計技巧（cicd-tips）
 
-以實戰 `.gitlab-ci.yml` 為範例,拆解可轉移的 pipeline 設計原理。
+以實戰 `.gitlab-ci.yml` 為範例,拆解可轉移的 pipeline 設計原理,並附依 YAML 撰寫的設計規格文件。
 
 * [Pipeline 設計原理（實戰範例拆解）](./GitLab%20CICD/cicd-tips/pipeline-design-principles.md)
+
+* [Pipeline 說明文件（依 `.gitlab-ci.yml` 撰寫的設計規格）](./GitLab%20CICD/cicd-tips/ci-docs/pipeline.zh-TW.md) · [EN](./GitLab%20CICD/cicd-tips/ci-docs/pipeline.md)
+
+### gen-bi 實戰手冊（handbooks）
+
+gen-bi 專案的角色導向操作手冊,中英雙語(中文版在 `zh-TW/`,英文版在資料夾根目錄)。建議依序:Cheat Sheet 快速上手 → 角色手冊深入。
+
+* [Cheat Sheet（快速操作參考）](./GitLab%20CICD/cicd-tips/gen-bi-handbooks/zh-TW/cheat-sheet.md) · [EN](./GitLab%20CICD/cicd-tips/gen-bi-handbooks/cheat-sheet.md)
+
+* [工程師工作手冊（Developer）](./GitLab%20CICD/cicd-tips/gen-bi-handbooks/zh-TW/developer-handbook.md) · [EN](./GitLab%20CICD/cicd-tips/gen-bi-handbooks/developer-handbook.md)
+
+* [Release Manager 工作手冊](./GitLab%20CICD/cicd-tips/gen-bi-handbooks/zh-TW/release-manager-handbook.md) · [EN](./GitLab%20CICD/cicd-tips/gen-bi-handbooks/release-manager-handbook.md)
+
+* [DevOps 維運筆記](./GitLab%20CICD/cicd-tips/gen-bi-handbooks/zh-TW/devops-note.md) · [EN](./GitLab%20CICD/cicd-tips/gen-bi-handbooks/devops-note.md)
 
 ### 案例 / 事故（cases）
 

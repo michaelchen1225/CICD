@@ -51,8 +51,8 @@ CI/CD 腳本最容易被當成「能跑就好」的黏合膠水,結果是:半年
 顯然的事不用註解,**非顯然的決策**才要。最有價值的註解是「我們踩過這個坑,所以這樣寫」——它能阻止後人「好心」把看似多餘的程式碼刪掉。
 
 * 為什麼 stage 要這樣排:`sentry_release` 刻意排在 `docker_build` 前,好讓 image 烤進已知的 release id(見 [L12](./.gitlab-ci.yml#L12))。
-* 為什麼用這個指令而非那個:`cut -c1-8` 對齊 `CI_COMMIT_SHORT_SHA`,而 `git rev-parse --short` 長度會浮動對不上(見 [L466-468](./.gitlab-ci.yml#L466-L468))。
-* 某個設定其實沒用但保留的理由:`http.connectTimeout` 對「連不上」無效,只當慢連線的廉價防護(見 [L111-113](./.gitlab-ci.yml#L111-L113))。
+* 為什麼用這個值而非那個:retag 來源直接用 `$CI_COMMIT_SHORT_SHA`(FF-only 下 pre-prod 的 tip 就是被合併的那個 dev commit,兩端讀同一個 GitLab 變數、字串天生對得上),而不是去解析 `origin/dev` HEAD——後者會跟並行的 dev push 競態、可能 promote 到還沒被 review 的新 image(見 [L495-504](./.gitlab-ci.yml#L495-L504))。
+* 某個設定其實沒用但保留的理由:`http.connectTimeout` 對「連不上」無效,只當慢連線的廉價防護(見 [L139-141](./.gitlab-ci.yml#L139-L141))。
 
 **要考慮的因素**:每一個「為什麼不是更直覺的那種寫法」的地方,都欠一行註解。
 
@@ -68,7 +68,7 @@ echo "  1. Check what version pre-prod is currently on: ..."
 echo "  2. Pull the bumped pom.xml from pre-prod into dev: ..."
 ```
 
-見 `version_guard` [L222-240](./.gitlab-ci.yml#L222-L240)。**要考慮的因素**:CI 失敗訊息的讀者是「當下被卡住、很焦慮的開發者」。把你 debug 時會做的事直接寫進訊息。
+見 `version_guard` [L250-268](./.gitlab-ci.yml#L250-L268)。**要考慮的因素**:CI 失敗訊息的讀者是「當下被卡住、很焦慮的開發者」。把你 debug 時會做的事直接寫進訊息。
 
 ### 4. 把 job 之間的隱性約定寫成明確的 CONTRACT
 
@@ -81,7 +81,7 @@ echo "  2. Pull the bumped pom.xml from pre-prod into dev: ..."
 #   version = raw pom <version>, SNAPSHOT kept
 ```
 
-見 [L401-404](./.gitlab-ci.yml#L401-L404)、[L470](./.gitlab-ci.yml#L470)。**要考慮的因素**:跨 job 共享的「字串格式 / 檔名 / tag 規則」是隱形耦合,要在兩端都註明,否則改一邊就壞。
+見 [L429-432](./.gitlab-ci.yml#L429-L432)、[L503-504](./.gitlab-ci.yml#L503-L504)。**要考慮的因素**:跨 job 共享的「字串格式 / 檔名 / tag 規則」是隱形耦合,要在兩端都註明,否則改一邊就壞。
 
 ---
 
@@ -111,7 +111,7 @@ maven_build_dev:
   extends: [.maven_cache, .dev_push_rules]   # 正交組合:快取 + 規則
 ```
 
-見 [L41-78](./.gitlab-ci.yml#L41-L78)、[L313](./.gitlab-ci.yml#L313)。**要考慮的因素**:同一段 `rules` / `cache` 是否在多個 job 出現?出現第二次就該抽成 mixin。並把「必須一起改」的設定綁進同一個 mixin(例如快取路徑與 `-Dmaven.repo.local` 要一致,綁在一起就不會只改一半)。
+見 [L41-106](./.gitlab-ci.yml#L41-L106)、[L341](./.gitlab-ci.yml#L341)。連兩個 deploy job 共用的 region/Bedrock 變數 + port 8090 守衛也抽成 `.deploy_base`(見 [L78-98](./.gitlab-ci.yml#L78-L98)),`deploy_dev` / `deploy_production` 各自 `extends`。⚠️ 但 `extends` 對 `before_script` 這種陣列是**整段取代、不是合併**:共用 before_script 的 job(像 deploy)不能再自己定義 before_script,否則會蓋掉繼承來的那份(見 `.deploy_base` 註解 [L72-77](./.gitlab-ci.yml#L72-L77))。**要考慮的因素**:同一段 `rules` / `cache` 是否在多個 job 出現?出現第二次就該抽成 mixin。並把「必須一起改」的設定綁進同一個 mixin(例如快取路徑與 `-Dmaven.repo.local` 要一致,綁在一起就不會只改一半)。
 
 ### 7. 用 `before_script` 當共用 shell 函式庫
 
@@ -126,7 +126,7 @@ maven_build_dev:
       pom_version() { awk '...' }     # 解析 pom 版本
 ```
 
-見 [L83-122](./.gitlab-ci.yml#L83-L122)。**要考慮的因素**:多個 job 重複的 shell 邏輯(解析、重試、設定),抽成函式集中維護。
+見 [L111-153](./.gitlab-ci.yml#L111-L153)。**要考慮的因素**:多個 job 重複的 shell 邏輯(解析、重試、設定),抽成函式集中維護。
 
 ---
 
@@ -144,7 +144,7 @@ else
 fi
 ```
 
-見 `image_retag_preprod` [L457-492](./.gitlab-ci.yml#L457-L492)。**要考慮的因素**:重跑會不會重複切 tag、重複部署、推壞分支?用「先檢查狀態再動作」讓重跑變成 no-op。
+見 `image_retag_preprod` [L489-526](./.gitlab-ci.yml#L489-L526)。**要考慮的因素**:重跑會不會重複切 tag、重複部署、推壞分支?用「先檢查狀態再動作」讓重跑變成 no-op。
 
 ### 9. 用「權威來源」而非「本地狀態」做決策
 
@@ -158,7 +158,7 @@ REMOTE_VERSION=$(pom_version "$remote_pom")
 if [ "$REMOTE_VERSION" = "$NEXT" ]; then echo "already bumped, skip"; exit 0; fi
 ```
 
-見 `prepare_next_release` [L528-544](./.gitlab-ci.yml#L528-L544)。**要考慮的因素**:我用來做判斷的資料,是不是這個 job 環境下「會說謊」的版本?對未知/異常狀態,寧可不動也不要覆寫([L540-544](./.gitlab-ci.yml#L540-L544))。
+見 `prepare_next_release` [L565-581](./.gitlab-ci.yml#L565-L581)。**要考慮的因素**:我用來做判斷的資料,是不是這個 job 環境下「會說謊」的版本?對未知/異常狀態,寧可不動也不要覆寫([L577-581](./.gitlab-ci.yml#L577-L581))。
 
 ### 10. 解析資料時要對準「真正想要的那一個」
 
@@ -169,7 +169,7 @@ if [ "$REMOTE_VERSION" = "$NEXT" ]; then echo "already bumped, skip"; exit 0; fi
 found && /<version>/ { gsub(/.*<version>|<\/version>.*/, ""); print; exit }
 ```
 
-見 [L117-122](./.gitlab-ci.yml#L117-L122)。**要考慮的因素**:我抓的欄位在檔案裡唯一嗎?不唯一就要先定位上下文(anchor),並把這個易錯點寫成註解 + 抽成共用函式重用。
+見 [L145-150](./.gitlab-ci.yml#L145-L150)。**要考慮的因素**:我抓的欄位在檔案裡唯一嗎?不唯一就要先定位上下文(anchor),並把這個易錯點寫成註解 + 抽成共用函式重用。
 
 ### 11. 主動避免 CI 觸發迴圈
 
@@ -182,7 +182,7 @@ found && /<version>/ { gsub(/.*<version>|<\/version>.*/, ""); print; exit }
 retry 3 15 git_net push -o ci.skip "$REMOTE" HEAD:$CI_COMMIT_BRANCH
 ```
 
-見 [L550-553](./.gitlab-ci.yml#L550-L553)。**要考慮的因素**:這個 job 會不會 push 而觸發自己?用哪種 skip——`push -o ci.skip`(只跳這次)還是 `[skip ci]`(跟著 commit 跑)——取決於這個 commit 之後會不會合併到其他需要跑 pipeline 的分支。
+見 [L587-590](./.gitlab-ci.yml#L587-L590)。**要考慮的因素**:這個 job 會不會 push 而觸發自己?用哪種 skip——`push -o ci.skip`(只跳這次)還是 `[skip ci]`(跟著 commit 跑)——取決於這個 commit 之後會不會合併到其他需要跑 pipeline 的分支。
 
 ---
 
@@ -198,7 +198,7 @@ retry 3 15 git_net push -o ci.skip "$REMOTE" HEAD:$CI_COMMIT_BRANCH
 | Sonar 掃描快取 | **per-branch** `sonar-cache-$CI_COMMIT_REF_SLUG` | 掃描狀態與分支相關,不該共用 |
 | Docker layer | `--cache-from` 先 `pull` 舊 image | 無狀態 runner 上重建 layer 的唯一辦法 |
 
-見 [L72-78](./.gitlab-ci.yml#L72-L78)、[L156-162](./.gitlab-ci.yml#L156-L162)、[L390-396](./.gitlab-ci.yml#L390-L396)。
+見 [L100-106](./.gitlab-ci.yml#L100-L106)、[L184-190](./.gitlab-ci.yml#L184-L190)、[L418-424](./.gitlab-ci.yml#L418-L424)。
 
 Docker 端還有一個進階技巧:`--build-arg CACHE_BUSTER="$(date +%s)"` 故意讓某個 build-arg 每次都變,**精準地讓某一層之後不被快取**,同時保留它前面的 layer 快取。
 
@@ -216,17 +216,17 @@ needs:
     artifacts: true           # 精確指定只取它的 artifact
 ```
 
-見 [L322-324](./.gitlab-ci.yml#L322-L324)、[L411-414](./.gitlab-ci.yml#L411-L414)。**要考慮的因素**:哪些 job 其實沒有先後依賴、可以提早並行?上游被條件跳過時,下游該卡住還是該繼續?
+見 [L350-352](./.gitlab-ci.yml#L350-L352)、[L439-442](./.gitlab-ci.yml#L439-L442)。**要考慮的因素**:哪些 job 其實沒有先後依賴、可以提早並行?上游被條件跳過時,下游該卡住還是該繼續?
 
 ### 14. 把工作放到「對的 image / runner」上
 
 每個 job 用剛好夠用的環境,而不是一律用最重的。把容易出問題的操作隔離到專屬環境。
 
-* git-only 的版本 bump → 輕量 `alpine:3`,不需要 DinD(見 [L513](./.gitlab-ci.yml#L513))。
-* 需要建 image → `docker:24` + DinD service(見 [L381-384](./.gitlab-ci.yml#L381-L384))。
+* git-only 的版本 bump → 輕量 `alpine:3`,不需要 DinD(見 [L550](./.gitlab-ci.yml#L550))。
+* 需要建 image → `docker:24` + DinD service(見 [L409-412](./.gitlab-ci.yml#L409-L412))。
 * 部署 → 帶特定 tag 的自架 runner(`lndata-1` / `lndata-oci-prod`)。
 
-並刻意把「易失敗的 gitlab.com git push」拆到輕量 job,遠離笨重的 DinD job(見 [L498-499](./.gitlab-ci.yml#L498-L499))。**要考慮的因素**:這個 job 真正需要什麼能力?把不同性質(重 build vs 純 git vs 部署)的工作分開,各用合適環境。
+並刻意把「易失敗的 gitlab.com git push」拆到輕量 job,遠離笨重的 DinD job(見 [L532-533](./.gitlab-ci.yml#L532-L533))。**要考慮的因素**:這個 job 真正需要什麼能力?把不同性質(重 build vs 純 git vs 部署)的工作分開,各用合適環境。
 
 ---
 
@@ -242,7 +242,11 @@ pre-prod    → 只 docker tag + push 成 :vX.Y.Z(不重 build)
 master      → promote-only,連 maven/sonar 都不重跑
 ```
 
-見 [L416-429](./.gitlab-ci.yml#L416-L429) 的設計說明,與 `.validate_rules` 對 master 的排除註解 [L42-44](./.gitlab-ci.yml#L42-L44)。**要考慮的因素**:你的「測試環境的產物」和「正式環境的產物」是同一個嗎?如果是分別 build,兩者就可能不一致。
+見 [L444-458](./.gitlab-ci.yml#L444-L458) 的設計說明,與 `.validate_rules` 對 master 的排除註解 [L42-44](./.gitlab-ci.yml#L42-L44)。
+
+而且要 **fail closed**:retag 的來源是 immutable 的 `:dev-<sha>-<version>`(`sha` 直接用 `$CI_COMMIT_SHORT_SHA`,FF-only 保證 pre-prod tip 就是那個 dev commit)。萬一這個 image 在 registry 還沒出現,短暫 retry 後就**直接失敗**,絕不退回 mutable 的 `:dev`——`:dev` 每次 dev push 都被覆寫,退回它等於可能把沒 review 過的 image 推上線,破壞 build-once 保證(見 [L507-516](./.gitlab-ci.yml#L507-L516))。
+
+**要考慮的因素**:你的「測試環境的產物」和「正式環境的產物」是同一個嗎?如果是分別 build,兩者就可能不一致;promote 時也要確保抓到的是「那個 immutable 版本」,而不是會變動的 latest。
 
 ### 16. mutable + immutable tag 並存
 
@@ -251,7 +255,7 @@ master      → promote-only,連 maven/sonar 都不重跑
 * `:dev`(mutable)——永遠指最新,方便引用。
 * `:dev-<short-sha>-<version>`(immutable)——固定不變的追溯點,當作 promote 的來源,版本字串讓人在 registry 一眼看出對應哪次發版。
 
-見 [L398-410](./.gitlab-ci.yml#L398-L410)。**要考慮的因素**:你需要「總是最新」還是「精確指定某一版」?答案通常是「都要」,所以兩個 tag 都推。
+見 [L426-438](./.gitlab-ci.yml#L426-L438)。**要考慮的因素**:你需要「總是最新」還是「精確指定某一版」?答案通常是「都要」,所以兩個 tag 都推。
 
 ### 17. 設計回滾路徑
 
@@ -264,7 +268,7 @@ deploy_production:
   # 在 Run job 對話框 override(例如 IMAGE_TAG=v0.1.4)即可回滾
 ```
 
-見 [L613-630](./.gitlab-ci.yml#L613-L630)、[L646-659](./.gitlab-ci.yml#L646-L659)。回滾時還在同一個 job 內重新標記 Sentry,利用 `releases new` 的冪等性補建可能不存在的舊版(見 [L694-715](./.gitlab-ci.yml#L694-L715))。**要考慮的因素**:出事了要回到上一版,需要幾個步驟?能不能「一鍵指定舊版重跑」?
+見 [L632-646](./.gitlab-ci.yml#L632-L646)、[L649-661](./.gitlab-ci.yml#L649-L661)。回滾時還在同一個 job 內重新標記 Sentry,利用 `releases new` 的冪等性補建可能不存在的舊版(見 [L701-722](./.gitlab-ci.yml#L701-L722))。部署完還把「實際上線的那個 tag」(含 rollback override 的值)寫進 `deployed-image-tag.txt` 當 artifact,留下稽核記錄(見 [L693-696](./.gitlab-ci.yml#L693-L696)、[L724-727](./.gitlab-ci.yml#L724-L727))。**要考慮的因素**:出事了要回到上一版,需要幾個步驟?能不能「一鍵指定舊版重跑」?有沒有留下「這次到底部了哪一版」的記錄?
 
 ---
 
@@ -285,15 +289,17 @@ deploy_dev:
   interruptible: false         # 部署中不准被打斷
 ```
 
-見 [L564-565](./.gitlab-ci.yml#L564-L565)、[L620-621](./.gitlab-ci.yml#L620-L621)。**要考慮的因素**:這個 job 動到的「共享資源」是什麼(一台機、一個分支、一個雲端資源)?兩個 pipeline 同時動它會不會出事?`stages`/`needs` 只在單一 pipeline 內排序,**跨 pipeline 的互斥要靠 `resource_group`**。
+見 deploy 的 [L601-602](./.gitlab-ci.yml#L601-L602)、[L639-640](./.gitlab-ci.yml#L639-L640)。**不只部署**:發版的 `image_retag_preprod` 與 `prepare_next_release` 也共用同一個 `resource_group: preprod_release`(見 [L467](./.gitlab-ci.yml#L467)、[L549](./.gitlab-ci.yml#L549))——否則兩條相近的 pre-prod pipeline 會同時通過「tag 不存在」檢查,接著競爭推 `:vX.Y.Z`(last-writer-wins)、git tag 與 bump pom;把「整段發版」綁進同一個 group 才能序列化。
+
+**要考慮的因素**:這個 job 動到的「共享資源」是什麼(一台機、一個分支、一個 git tag、一個雲端資源)?兩個 pipeline 同時動它會不會出事?`stages`/`needs` 只在單一 pipeline 內排序,**跨 pipeline 的互斥要靠 `resource_group`**。
 
 ### 19. 最小化機密(secret)的暴露
 
 機密的暴露面要壓到最小:不要 inline 出現在指令、用完即清、登入後盡快登出。
 
-* secret 寫進 `mktemp` 產生的暫存 env file 再餵給 compose,用完 `rm -f`,而非散在指令列(見 [L595-607](./.gitlab-ci.yml#L595-L607))。
-* `docker login` → `pull` → 立刻 `docker logout`,縮短憑證留存時間(見 [L590-592](./.gitlab-ci.yml#L590-L592))。
-* 上線前檢查必要機密是否為空,並提示「variable scope / Protected 設定要對得上分支」這個常見坑(見 [L661-665](./.gitlab-ci.yml#L661-L665))。
+* secret 寫進 `mktemp` 產生的暫存 env file 再餵給 compose,用完 `rm -f`,而非散在指令列(見 [L614-626](./.gitlab-ci.yml#L614-L626))。
+* `docker login` → `pull` → 立刻 `docker logout`,縮短憑證留存時間(見 [L609-611](./.gitlab-ci.yml#L609-L611))。
+* 上線前檢查必要機密是否為空,並提示「variable scope / Protected 設定要對得上分支」這個常見坑(見 [L663-667](./.gitlab-ci.yml#L663-L667))。
 
 **要考慮的因素**:機密在哪些地方會被看到(process list、log、磁碟、子行程環境)?每一處都想辦法縮短或消除暴露。
 
@@ -317,7 +323,7 @@ retry() {              # retry <max> <delay> <cmd...>
 git_net() { git -c http.connectTimeout=30000 "$@"; }   # 所有 git 網路呼叫的唯一入口
 ```
 
-見 [L99-114](./.gitlab-ci.yml#L99-L114)。**要考慮的因素**:重試前先確認操作是**冪等**的(重推同 tag/commit 是 no-op),否則 retry 會造成重複副作用。
+見 [L127-142](./.gitlab-ci.yml#L127-L142)。**要考慮的因素**:重試前先確認操作是**冪等**的(重推同 tag/commit 是 no-op),否則 retry 會造成重複副作用。
 
 ### 21. 把已知的基礎設施缺陷,連同根因註解一起寫進腳本
 
@@ -330,7 +336,7 @@ GLIP=$(dig +short A "$CI_SERVER_HOST" | grep -E '^[0-9.]+$' | head -1)
 [ -n "$GLIP" ] && echo "$GLIP $CI_SERVER_HOST" >> /etc/hosts
 ```
 
-見 [L86-97](./.gitlab-ci.yml#L86-L97)。**要考慮的因素**:治本(修 infra)做不到時的治標方案,要附上「為什麼需要它」,並在治本後能被安全移除。
+見 [L114-125](./.gitlab-ci.yml#L114-L125)。**要考慮的因素**:治本(修 infra)做不到時的治標方案,要附上「為什麼需要它」,並在治本後能被安全移除。
 
 ---
 

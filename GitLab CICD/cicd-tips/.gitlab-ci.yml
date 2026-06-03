@@ -69,6 +69,34 @@ workflow:
   rules:
     - if: '$CI_COMMIT_BRANCH == "master" && $CI_PIPELINE_SOURCE == "push"'
 
+# Shared deploy config for deploy_dev + deploy_production. The region/Bedrock
+# variables and the port-8090 guard are identical across both; job-specific bits
+# (IMAGE_TAG source, SENTRY_ENVIRONMENT, the prod-only AWS precheck / Sentry
+# marking) stay in each job. Neither deploy job defines its own before_script, so
+# both inherit this port guard verbatim (extends replaces before_script wholesale,
+# it does not merge — keep the per-job before_script absent).
+.deploy_base:
+  variables:
+    AWS_REGION: "us-west-2"
+    BEDROCK_MODEL_ID: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+    BEDROCK_EMBEDDING_MODEL: "amazon.titan-embed-text-v2:0"
+  before_script:
+    - |
+      port_line=$(sudo ss -tlnp | grep ':8090' || true)
+      if [ -n "$port_line" ]; then
+        if echo "$port_line" | grep -q "docker-proxy"; then
+          holder=$(sudo docker ps --format '{{.Names}}' | grep '^gen-bi$' || true)
+          if [ -z "$holder" ]; then
+            echo "ERROR: port 8090 is held by an unrelated container. Aborting."
+            exit 1
+          fi
+          echo "INFO: port 8090 held by gen-bi — will be recreated."
+        else
+          echo "ERROR: port 8090 is held by a non-Docker process. Aborting."
+          exit 1
+        fi
+      fi
+
 .maven_cache:
   cache:
     - key: maven-cache-gen-bi
@@ -426,12 +454,17 @@ docker_build_dev:
 # Properties:
 # - interruptible: false — mid-job cancel leaves tag/image half-done
 # - Idempotent: tag exists → skip retag/tag (safe to re-run)
-# - Short retry on :dev-<sha>-<version>, then falls back to :dev (dev pipeline race)
+# - Source = :dev-<$CI_COMMIT_SHORT_SHA>-<version> (FF-only: pre-prod tip == merged
+#   dev commit). Short retry for registry lag, then hard-fail — never promote :dev.
 image_retag_preprod:
   stage: image_retag
   extends: [.ci_helpers, .preprod_push_rules]
   tags: [docker-build]
   interruptible: false
+  # Serialize the whole release across concurrent pre-prod pipelines: without this,
+  # two pipelines both pass the "tag absent" check, then race the :vX.Y.Z docker push
+  # (last-writer-wins) and the git-tag push. Shared with prepare_next_release.
+  resource_group: preprod_release
   image: docker:24
   services:
     - name: docker:24-dind
@@ -459,26 +492,27 @@ image_retag_preprod:
       else
         docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
 
-        # pre-prod's commit is a new SHA (merge/squash), so resolve dev HEAD to find
-        # the immutable :dev-<sha>-<version> that dev's docker_build_dev pushed.
-        DEV_BRANCH=$(echo "$CI_COMMIT_BRANCH" | sed 's|/pre-prod$|/dev|; s|^pre-prod$|dev|')
-        retry 3 15 git_net fetch origin "$DEV_BRANCH"
-        # cut -c1-8 == GitLab's CI_COMMIT_SHORT_SHA (first 8 chars), which is what
-        # docker_build_dev tagged with. `git rev-parse --short` (auto length, ~7)
-        # could disagree and miss the image.
-        DEV_SHA=$(git rev-parse "origin/$DEV_BRANCH" | cut -c1-8)
+        # FF-only model (enforced by guard_no_squash_preprod in `validate`): a
+        # fast-forward merge creates NO new commit, so pre-prod's tip IS the dev
+        # commit that was merged. $CI_COMMIT_SHORT_SHA is therefore exactly the
+        # short SHA docker_build_dev used for its immutable tag — both sides read
+        # the same GitLab variable, so the strings match by construction (no
+        # origin/dev lookup, no cut -c1-8 vs rev-parse --short mismatch). Resolving
+        # origin/dev HEAD instead would race a concurrent dev push and could promote
+        # a newer, un-reviewed image.
         # CONTRACT with docker_build_dev: dev-<sha>-<pom-version>, SNAPSHOT kept.
         # $RAW is that same SNAPSHOT version (a FF merge brings dev's pom verbatim).
-        SRC="$CI_REGISTRY_IMAGE/gen-bi:dev-$DEV_SHA-$RAW"
+        SRC="$CI_REGISTRY_IMAGE/gen-bi:dev-$CI_COMMIT_SHORT_SHA-$RAW"
 
-        # docker_build_dev pushes :dev then :dev-<sha>-<version>, so a miss is almost
-        # always that brief push gap — a short retry covers it. If it still never
-        # appears, fall back to :dev (the same image during that gap).
-        if ! retry 2 10 docker pull "$SRC"; then
-          echo "WARN: $SRC unavailable — falling back to :dev."
-          docker pull "$CI_REGISTRY_IMAGE/gen-bi:dev" \
-            || { echo "ERROR: neither $SRC nor :dev found — did dev's pipeline build the image?"; exit 1; }
-          SRC="$CI_REGISTRY_IMAGE/gen-bi:dev"
+        # A short retry absorbs registry replication lag. Never fall back to the
+        # mutable :dev tag: it is overwritten on every dev push, so promoting it
+        # would break build-once / promote-a-verified-artifact and could ship an
+        # unreviewed image. If the immutable tag never appears, fail loudly.
+        if ! retry 3 10 docker pull "$SRC"; then
+          echo "ERROR: $SRC not found in registry — the dev pipeline for commit"
+          echo "       $CI_COMMIT_SHORT_SHA must have built and pushed it."
+          echo "       Refusing to promote an unverified image. Aborting."
+          exit 1
         fi
 
         docker tag  "$SRC" "$CI_REGISTRY_IMAGE/gen-bi:$TAG"
@@ -510,6 +544,9 @@ prepare_next_release:
   extends: [.ci_helpers, .preprod_push_rules]
   tags: [docker-build]
   interruptible: false
+  # Same group as image_retag_preprod — serializes the pom bump/push too, so two
+  # concurrent pre-prod pipelines can't both bump from RAW and race the branch push.
+  resource_group: preprod_release
   image: alpine:3
   variables:
     GIT_DEPTH: "0"
@@ -559,33 +596,15 @@ prepare_next_release:
 
 deploy_dev:
   stage: deploy
-  extends: [.dev_push_rules]
+  extends: [.dev_push_rules, .deploy_base]
   tags: [lndata-1]
   interruptible: false
   resource_group: dev_deploy
   variables:
     GIT_CLEAN_FLAGS: none
-    AWS_REGION: "us-west-2"
-    BEDROCK_MODEL_ID: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
-    BEDROCK_EMBEDDING_MODEL: "amazon.titan-embed-text-v2:0"
     IMAGE_TAG: "dev"
     SENTRY_ENVIRONMENT: "dev"
-  before_script:
-    - |
-      port_line=$(sudo ss -tlnp | grep ':8090' || true)
-      if [ -n "$port_line" ]; then
-        if echo "$port_line" | grep -q "docker-proxy"; then
-          holder=$(sudo docker ps --format '{{.Names}}' | grep '^gen-bi$' || true)
-          if [ -z "$holder" ]; then
-            echo "ERROR: port 8090 is held by an unrelated container. Aborting."
-            exit 1
-          fi
-          echo "INFO: port 8090 held by gen-bi — will be recreated."
-        else
-          echo "ERROR: port 8090 is held by a non-Docker process. Aborting."
-          exit 1
-        fi
-      fi
+  # before_script (port 8090 guard) and region/Bedrock vars inherited from .deploy_base.
   script:
     - sudo docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
     - sudo docker pull "$CI_REGISTRY_IMAGE/gen-bi:$IMAGE_TAG"
@@ -614,7 +633,7 @@ deploy_dev:
 # IMAGE_TAG defaults to the latest vX.Y.Z git tag; override via Run job dialog for rollback.
 deploy_production:
   stage: deploy
-  extends: [.master_push_rules]
+  extends: [.master_push_rules, .deploy_base]
   tags: [lndata-oci-prod]
   when: manual
   interruptible: false
@@ -622,27 +641,10 @@ deploy_production:
   variables:
     GIT_CLEAN_FLAGS: none
     GIT_DEPTH: "0"
-    AWS_REGION: "us-west-2"
-    BEDROCK_MODEL_ID: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
-    BEDROCK_EMBEDDING_MODEL: "amazon.titan-embed-text-v2:0"
     SENTRY_ENVIRONMENT: "production"
     # IMAGE_TAG NOT declared here — defaults to derivation from latest git tag.
     # Override via Run job dialog (e.g. IMAGE_TAG=v0.1.4) for rollback.
-  before_script:
-    - |
-      port_line=$(sudo ss -tlnp | grep ':8090' || true)
-      if [ -n "$port_line" ]; then
-        if echo "$port_line" | grep -q "docker-proxy"; then
-          holder=$(sudo docker ps --format '{{.Names}}' | grep '^gen-bi$' || true)
-          if [ -z "$holder" ]; then
-            echo "ERROR: port 8090 is held by an unrelated container. Aborting."
-            exit 1
-          fi
-        else
-          echo "ERROR: port 8090 is held by a non-Docker process. Aborting."
-          exit 1
-        fi
-      fi
+  # before_script (port 8090 guard) and region/Bedrock vars inherited from .deploy_base.
   script:
     - |
       if [ -z "$IMAGE_TAG" ]; then
@@ -687,6 +689,11 @@ deploy_production:
       echo "APP_VERSION=${VERSION}" >> "$env_file"
       sudo docker compose -f docker-compose.yml --env-file "$env_file" up -d --force-recreate
       rm -f "$env_file"
+
+      # Audit record of what was actually deployed (the resolved tag, incl. a manual
+      # IMAGE_TAG rollback override) — collected via the job's deployed-image-tag.txt
+      # artifact. Plain text, not dotenv, so a manual re-run can't clash on upload.
+      echo "$IMAGE_TAG" > deployed-image-tag.txt
 
       sudo docker image rm local/gen-bi:offline-v1 2>/dev/null || true
       sudo docker image prune -f

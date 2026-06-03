@@ -28,7 +28,21 @@
 
 CI/CD 腳本最容易被當成「能跑就好」的黏合膠水,結果是:半年後沒人敢動、出錯了不知道為什麼、改一個值要找五個地方。
 
-好的 pipeline 設計其實和好的程式設計是同一套價值觀:**可讀、可重用、可重跑、可觀測、可回滾**。下面七個面向,就是設計腳本時應該逐一自問的維度。
+好的 pipeline 設計其實和好的程式設計是同一套價值觀:**可讀、可重用、可重跑、可觀測、可回滾**。本篇把它拆成下面七個面向——先在這裡把每一項「在問什麼、為什麼重要」講清楚;對哪一項有興趣,點標題就能跳到對應章節看 `.gitlab-ci.yml` 的實例拆解。
+
+1. **[意圖與可讀性](#一可讀性與意圖讓人三分鐘看懂)** —— 把 pipeline 當成會被別人接手的程式:開頭幾行就講清楚核心策略與分支模型,每個非顯然的決策(尤其踩過的坑)都留一行「為什麼」,失敗訊息要可操作,跨 job 的隱性約定要寫成明確 CONTRACT。讓接手者三分鐘看懂,而不是逆向工程整個檔案。
+
+2. **[結構與重用](#二結構與重用不要複製貼上)** —— 同一段 rules / cache / shell 出現第二次,就抽成 `.` 開頭的隱藏 job 用 `extends` 組合;善用「安全預設 + 例外覆寫」與「`before_script` 當共用函式庫」。目標是改一處、全部生效,而不是複製貼上五份、日後各自改到走樣。
+
+3. **[正確性與冪等](#三正確性與冪等可以安全重跑)** —— 任何會「切 tag / 推 commit / 部署」的 job 都要能安全重跑:先檢查狀態再動作,用權威的遠端狀態(而非會說謊的本地 checkout)做判斷,解析設定檔時對準真正想要的欄位,push 回自己分支時主動防 CI 觸發迴圈。
+
+4. **[效能與快取](#四效能與快取別讓-runner-做白工)** —— 用 DAG(`needs`)讓 job 一就緒就並行,依「跟分支有沒有關係」分層設計快取 key,每個 job 用剛好夠用的 image / runner,別讓 runner 重複做白工。
+
+5. **[供應鏈與發版](#五供應鏈與發版上線的就是測過的)** —— 上線的二進位就是測過的那一個:image 只建一次,之後靠重新貼標籤(retag)往上游送,並留一個不可變的追溯點;萬一抓不到那個驗證過的版本,寧可直接失敗,也不退回會一直被覆寫的 `:dev`。
+
+6. **[並行控制與安全](#六並行控制與安全保護共享資源與機密)** —— 動到共享資源(機器、分支、git tag、雲端資源)的 job,用 `resource_group` 做跨 pipeline 互斥、用 `interruptible: false` 防中途被砍;機密的暴露面(process list、log、磁碟、子行程)壓到最小。
+
+7. **[韌性與回滾](#七韌性面對不可靠的網路與基礎設施)** —— 外部網路呼叫會失敗,用通用 `retry` 包住(前提是操作冪等),把已知的 infra 缺陷連同根因註解寫進腳本;發版從第一天就設計好「一鍵回滾」的路徑與稽核記錄。
 
 ---
 
@@ -50,8 +64,8 @@ CI/CD 腳本最容易被當成「能跑就好」的黏合膠水,結果是:半年
 
 顯然的事不用註解,**非顯然的決策**才要。最有價值的註解是「我們踩過這個坑,所以這樣寫」——它能阻止後人「好心」把看似多餘的程式碼刪掉。
 
-* 為什麼 stage 要這樣排:`sentry_release` 刻意排在 `docker_build` 前,好讓 image 烤進已知的 release id(見 [L12](./.gitlab-ci.yml#L12))。
-* 為什麼用這個值而非那個:retag 來源直接用 `$CI_COMMIT_SHORT_SHA`(FF-only 下 pre-prod 的 tip 就是被合併的那個 dev commit,兩端讀同一個 GitLab 變數、字串天生對得上),而不是去解析 `origin/dev` HEAD——後者會跟並行的 dev push 競態、可能 promote 到還沒被 review 的新 image(見 [L495-504](./.gitlab-ci.yml#L495-L504))。
+* 為什麼 stage 要這樣排:`sentry_release` 刻意排在 `docker_build` 前,好讓建出來的 image 內建一個確定的 release id(見 [L12](./.gitlab-ci.yml#L12))。
+* 為什麼用這個值而非那個:retag 來源直接用 `$CI_COMMIT_SHORT_SHA`(FF-only 下,pre-prod 分支的最新 commit(也就是 tip)就是剛被合併進來的那個 dev commit,兩端讀同一個 GitLab 變數、字串天生對得上),而不是去解析 `origin/dev` HEAD——後者會跟並行的 dev push 競態、可能 promote 到還沒被 review 的新 image(見 [L495-504](./.gitlab-ci.yml#L495-L504))。
 * 某個設定其實沒用但保留的理由:`http.connectTimeout` 對「連不上」無效,只當慢連線的廉價防護(見 [L139-141](./.gitlab-ci.yml#L139-L141))。
 
 **要考慮的因素**:每一個「為什麼不是更直覺的那種寫法」的地方,都欠一行註解。
@@ -111,7 +125,11 @@ maven_build_dev:
   extends: [.maven_cache, .dev_push_rules]   # 正交組合:快取 + 規則
 ```
 
-見 [L41-106](./.gitlab-ci.yml#L41-L106)、[L341](./.gitlab-ci.yml#L341)。連兩個 deploy job 共用的 region/Bedrock 變數 + port 8090 守衛也抽成 `.deploy_base`(見 [L78-98](./.gitlab-ci.yml#L78-L98)),`deploy_dev` / `deploy_production` 各自 `extends`。⚠️ 但 `extends` 對 `before_script` 這種陣列是**整段取代、不是合併**:共用 before_script 的 job(像 deploy)不能再自己定義 before_script,否則會蓋掉繼承來的那份(見 `.deploy_base` 註解 [L72-77](./.gitlab-ci.yml#L72-L77))。**要考慮的因素**:同一段 `rules` / `cache` 是否在多個 job 出現?出現第二次就該抽成 mixin。並把「必須一起改」的設定綁進同一個 mixin(例如快取路徑與 `-Dmaven.repo.local` 要一致,綁在一起就不會只改一半)。
+見 [L41-106](./.gitlab-ci.yml#L41-L106)、[L341](./.gitlab-ci.yml#L341)。兩個 deploy job 共用的設定——AWS region、Bedrock 模型變數,以及「部署前先檢查 port 8090 有沒有被別的東西佔住」那段 `before_script`——也抽成 `.deploy_base`,`deploy_dev` 和 `deploy_production` 各自 `extends` 它(見 [L78-98](./.gitlab-ci.yml#L78-L98))。
+
+> ⚠️ **`extends` 有個陷阱**:它對 `before_script` 這類「清單型」設定是**整段覆蓋、不是合併**。所以一旦某個 job `extends` 了帶 `before_script` 的 mixin(像這裡的 deploy),它自己就不能再寫 `before_script`,否則會把繼承來的那段整個蓋掉(見 `.deploy_base` 開頭的提醒註解 [L72-77](./.gitlab-ci.yml#L72-L77))。
+
+**要考慮的因素**:同一段 `rules` 或 `cache` 在第二個 job 出現時,就該抽成 mixin;並把「必須同進同退」的設定綁在同一個 mixin 裡(例如快取路徑 `.m2/repository`,和指向它的 `-Dmaven.repo.local`,綁在一起就不會只改到一半)。
 
 ### 7. 用 `before_script` 當共用 shell 函式庫
 
@@ -144,11 +162,11 @@ else
 fi
 ```
 
-見 `image_retag_preprod` [L489-526](./.gitlab-ci.yml#L489-L526)。**要考慮的因素**:重跑會不會重複切 tag、重複部署、推壞分支?用「先檢查狀態再動作」讓重跑變成 no-op。
+見 `image_retag_preprod` [L489-526](./.gitlab-ci.yml#L489-L526)。**要考慮的因素**:重跑會不會重複切 tag、重複部署、推壞分支?用「先檢查狀態、再決定要不要動作」,讓重跑變成「什麼都不做」(no-op)。
 
 ### 9. 用「權威來源」而非「本地狀態」做決策
 
-job 的 checkout 可能是過時的某個 commit,本地檔案會誤導判斷。要決定「該不該做」時,去問**遠端的真實狀態**(remote tip / git tag),而不是看本地 working copy。
+job 的 checkout 可能是過時的某個 commit,本地檔案會誤導判斷。要決定「該不該做」時,去問**遠端的真實狀態**(remote tip / git tag),而不是看本地的工作目錄(working copy)。
 
 ```bash
 # 本地 pom 永遠是 bump 前的版本,會誤判;改比對 remote 分支 tip
@@ -190,7 +208,7 @@ retry 3 15 git_net push -o ci.skip "$REMOTE" HEAD:$CI_COMMIT_BRANCH
 
 ### 12. 依「用途」分層設計快取 key
 
-快取 key 的選擇取決於「這份快取和分支有沒有關係」:
+要怎麼設快取的 key,取決於一個問題:**這份快取的內容,在不同分支之間能不能共用?** 能共用,就用固定的 key、所有分支命中同一份;不能共用,就讓 key 跟著分支變、各分支各存一份:
 
 | 快取對象 | key 策略 | 原因 |
 |---|---|---|
@@ -234,7 +252,7 @@ needs:
 
 ### 15. Build-once、promote 已驗證的 artifact
 
-最重要的供應鏈原則:**測過的那個二進位,就是上線的那個二進位**。image 只在 dev 建一次,後續環境只「重新打標籤」而非重新編譯,避免「測一份、上線另一份」的飄移。
+最重要的供應鏈原則:**測過的那個二進位,就是上線的那個二進位**。image 只在 dev 建置一次,之後一路到正式環境都只「重新貼標籤」、不再重新編譯,避免「測的是這一份、上線的卻是另一份重編出來的」。
 
 ```
 dev push    → 建 image,推 :dev 與 :dev-<sha>-<version>
@@ -244,7 +262,7 @@ master      → promote-only,連 maven/sonar 都不重跑
 
 見 [L444-458](./.gitlab-ci.yml#L444-L458) 的設計說明,與 `.validate_rules` 對 master 的排除註解 [L42-44](./.gitlab-ci.yml#L42-L44)。
 
-而且要 **fail closed**:retag 的來源是 immutable 的 `:dev-<sha>-<version>`(`sha` 直接用 `$CI_COMMIT_SHORT_SHA`,FF-only 保證 pre-prod tip 就是那個 dev commit)。萬一這個 image 在 registry 還沒出現,短暫 retry 後就**直接失敗**,絕不退回 mutable 的 `:dev`——`:dev` 每次 dev push 都被覆寫,退回它等於可能把沒 review 過的 image 推上線,破壞 build-once 保證(見 [L507-516](./.gitlab-ci.yml#L507-L516))。
+而且要 **fail closed**(寧可整個失敗,也不退而用一個不確定的版本):retag 的來源固定是不可變的 `:dev-<sha>-<version>`(其中 `sha` 取 `$CI_COMMIT_SHORT_SHA`;FF-only 下 pre-prod 的最新 commit 就是那個 dev commit)。萬一這個 image 在 registry 還沒出現,短暫重試後就**直接失敗**,絕不退回會變動的 `:dev`——`:dev` 每次 dev push 都會被覆寫,退回它等於可能把還沒 review 過的 image 推上線,破壞「只用驗證過的 image」這個保證(見 [L507-516](./.gitlab-ci.yml#L507-L516))。
 
 **要考慮的因素**:你的「測試環境的產物」和「正式環境的產物」是同一個嗎?如果是分別 build,兩者就可能不一致;promote 時也要確保抓到的是「那個 immutable 版本」,而不是會變動的 latest。
 
@@ -268,7 +286,11 @@ deploy_production:
   # 在 Run job 對話框 override(例如 IMAGE_TAG=v0.1.4)即可回滾
 ```
 
-見 [L632-646](./.gitlab-ci.yml#L632-L646)、[L649-661](./.gitlab-ci.yml#L649-L661)。回滾時還在同一個 job 內重新標記 Sentry,利用 `releases new` 的冪等性補建可能不存在的舊版(見 [L701-722](./.gitlab-ci.yml#L701-L722))。部署完還把「實際上線的那個 tag」(含 rollback override 的值)寫進 `deployed-image-tag.txt` 當 artifact,留下稽核記錄(見 [L693-696](./.gitlab-ci.yml#L693-L696)、[L724-727](./.gitlab-ci.yml#L724-L727))。**要考慮的因素**:出事了要回到上一版,需要幾個步驟?能不能「一鍵指定舊版重跑」?有沒有留下「這次到底部了哪一版」的記錄?
+見 [L632-646](./.gitlab-ci.yml#L632-L646)、[L649-661](./.gitlab-ci.yml#L649-L661)。
+
+另外兩個延伸做法:回滾時在**同一個 job 內**順手重新標記 Sentry,靠 `releases new` 的冪等性補建可能還不存在的舊版本(見 [L701-722](./.gitlab-ci.yml#L701-L722));部署完也把「實際上線的那個 tag」(包含手動回滾時填入的版本)寫進 `deployed-image-tag.txt` 當 artifact 保存,留下「這次到底部署了哪一版」的記錄(見 [L693-696](./.gitlab-ci.yml#L693-L696)、[L724-727](./.gitlab-ci.yml#L724-L727))。
+
+**要考慮的因素**:出事要回到上一版,需要幾個步驟?能不能「一鍵指定某個舊版本重跑」?事後查得到當時上線的是哪一版嗎?
 
 ---
 
@@ -280,7 +302,7 @@ deploy_production:
 
 | 設定 | 防的是 | 沒有它會怎樣 |
 |---|---|---|
-| `resource_group` | 兩個 job **同時跑**(跨 pipeline) | 並行部署互相覆寫、port 衝突、out-of-order |
+| `resource_group` | 兩個 job **同時跑**(跨 pipeline) | 並行部署互相覆寫、port 衝突、新舊版上線順序錯亂 |
 | `interruptible: false` | 跑到一半**被新 pipeline 取消** | 容器部署到一半被砍,半成品狀態 |
 
 ```yaml
@@ -289,7 +311,9 @@ deploy_dev:
   interruptible: false         # 部署中不准被打斷
 ```
 
-見 deploy 的 [L601-602](./.gitlab-ci.yml#L601-L602)、[L639-640](./.gitlab-ci.yml#L639-L640)。**不只部署**:發版的 `image_retag_preprod` 與 `prepare_next_release` 也共用同一個 `resource_group: preprod_release`(見 [L467](./.gitlab-ci.yml#L467)、[L549](./.gitlab-ci.yml#L549))——否則兩條相近的 pre-prod pipeline 會同時通過「tag 不存在」檢查,接著競爭推 `:vX.Y.Z`(last-writer-wins)、git tag 與 bump pom;把「整段發版」綁進同一個 group 才能序列化。
+見 deploy 的 [L601-602](./.gitlab-ci.yml#L601-L602)、[L639-640](./.gitlab-ci.yml#L639-L640)。
+
+**不只是部署**:發版用的 `image_retag_preprod` 和 `prepare_next_release` 也共用同一個 `resource_group: preprod_release`(見 [L467](./.gitlab-ci.yml#L467)、[L549](./.gitlab-ci.yml#L549))。否則兩條時間相近的 pre-prod pipeline 會雙雙通過「tag 還不存在」的檢查,接著搶著推同一個 `:vX.Y.Z`、git tag 和 bump pom——把「整段發版流程」綁進同一個 group,才能讓它們乖乖排隊、一次只跑一條。
 
 **要考慮的因素**:這個 job 動到的「共享資源」是什麼(一台機、一個分支、一個 git tag、一個雲端資源)?兩個 pipeline 同時動它會不會出事?`stages`/`needs` 只在單一 pipeline 內排序,**跨 pipeline 的互斥要靠 `resource_group`**。
 
@@ -307,9 +331,9 @@ deploy_dev:
 
 ## 七、韌性：面對不可靠的網路與基礎設施
 
-### 20. 通用 retry + 單一網路接縫
+### 20. 通用 retry + 把網路呼叫收斂到單一入口
 
-外部網路操作會間歇失敗。準備一個通用的 `retry`,並把所有同類網路呼叫收斂成單一函式(single seam),日後要加 timeout/proxy 只改一處。
+外部網路操作會間歇失敗。準備一個通用的 `retry`,並把所有同類的網路呼叫都收斂到同一個函式(只留一個統一的「進出口」,single seam),日後要加逾時、proxy 設定,只要改這一處。
 
 ```bash
 retry() {              # retry <max> <delay> <cmd...>
@@ -342,14 +366,6 @@ GLIP=$(dig +short A "$CI_SERVER_HOST" | grep -E '^[0-9.]+$' | head -1)
 
 ## 結語：設計前的檢查清單
 
-下次寫一條新的 pipeline / job 前,逐項自問:
+設計前的檢查清單,就是開頭那七個面向——它們不是寫完才回頭檢查,而是**動手前**就該逐一自問的提問:[意圖與可讀性](#一可讀性與意圖讓人三分鐘看懂)、[結構與重用](#二結構與重用不要複製貼上)、[正確性與冪等](#三正確性與冪等可以安全重跑)、[效能與快取](#四效能與快取別讓-runner-做白工)、[供應鏈與發版](#五供應鏈與發版上線的就是測過的)、[並行控制與安全](#六並行控制與安全保護共享資源與機密)、[韌性與回滾](#七韌性面對不可靠的網路與基礎設施)。
 
-1. **意圖** — 接手者讀開頭幾行能懂全貌嗎?非顯然的決策有註解嗎?
-2. **重用** — 這段 rules/cache/shell 出現第二次了嗎?該抽 mixin 了嗎?
-3. **冪等** — 這個 job 重跑一次會怎樣?判斷依據是會說謊的本地狀態,還是權威的遠端?
-4. **效能** — 哪些 job 可以並行?快取 key 跟分支有關嗎?用了剛好夠用的 image 嗎?
-5. **供應鏈** — 上線的產物,就是測過的那一個嗎?有 immutable 的追溯點嗎?
-6. **並行/安全** — 動到的共享資源,兩個 pipeline 同時碰會出事嗎(要 `resource_group` 嗎)?機密的暴露面壓到最小了嗎?
-7. **韌性與回滾** — 外部呼叫會失敗,有 retry 嗎(且操作冪等嗎)?出事了怎麼一鍵回滾?
-
-把這七個面向當成設計腳本時的固定提問,大多數「能跑但脆弱」的 pipeline 問題都能在寫之前就避開。
+把這七個面向當成設計腳本的固定起點,大多數「能跑但脆弱」的 pipeline 問題,都能在寫之前就避開。
